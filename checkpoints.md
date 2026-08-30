@@ -81,4 +81,15 @@ Evidence images live under `.artifacts/` or system temp paths and stay out of Gi
 5. GPT-5.6 Sol review: fail on first pass (shared hex literals not hoisted; ban-word grep matched comments). Both were prompt-literal findings, remediated cosmetically; pass on re-review.
 6. Argent evidence (target `93EEF062-B4DC-4989-AF77-CF47EE2A9816`), tests type: app relaunched, root route visible (`Native foundation ready` await succeeded in 96 ms), `debugger-log-registry` connected with 0 entries.
 7. Deviations from the reference: none. Notable in-spec decisions: destructive light fallback uses `#d70015` (system red accessible variant) so onDestructive white meets 4.5:1; brand accent pair (`#2563eb` light, `#7cb3ff` dark) chosen to pass 4.5:1 against its on-accent colors.
+8. Commit and push: `8548511`, pushed to `origin/main`.
+
+## T5 - foundation components
+
+1. Task id: T5. Acceptance: AppText, Icon mapping boundary, adaptive-material with platform files and identical geometry across branches, accessibility helpers, component tests by role and name, iOS-only imports isolated, no invisible surface on missing capability.
+2. Author: Fable 5. Delegated agents: none.
+3. Files changed: `src/components/foundation/{app-text,icon,material-geometry,adaptive-material-opaque,adaptive-material,adaptive-material.ios,adaptive-material.android}.tsx|ts` (new), `src/foundation/accessibility/index.ts` (new), `src/theme/colors.ts` and `index.ts` (normalizeScheme helper), `tests/native-foundation/components.test.tsx` (new).
+4. Tests and static checks: TDD red recorded, then green. 31/31 tests; coverage 100/96/100/100 (all four at or above 90). Lint, typecheck, `git diff --check` pass.
+5. GPT-5.6 Sol review: fail on first pass (icon queried by label instead of role plus name). Remediated with getByRole('image', { name }); pass on re-review. Recorded risk from review: resolver-level proof that an unsuffixed import resolves android-safely arrives with the Android export in T8.
+6. Argent evidence (target `93EEF062-B4DC-4989-AF77-CF47EE2A9816`), tests type: relaunch, root route visible (await 88 ms), log registry connected with 0 entries. Components render on-screen first in T6; their native verification happens there and in T7.
+7. Deviations from the reference: none. Notable in-spec decisions: `expo-glass-effect` availability probe wrapped in try/catch degrading to blur; shared `adaptive-material-opaque` base keeps neutral and android boundaries identical; Icon uses `expo-image` `sf:` sources on iOS and accessible glyph text elsewhere; decorative icons are hidden from assistive technology.
 8. Commit and push: recorded after gates pass.

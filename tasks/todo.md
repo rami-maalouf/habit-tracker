@@ -44,10 +44,10 @@ Every task ends with: full validation suite, independent GPT-5.6 Sol pass, Argen
 
 ## T5 - foundation components
 
-- [ ] red: component tests (roles, labels, 44-pt targets, icon mapping, adaptive-material fallback selection with identical geometry)
-- [ ] `app-text.tsx`, `icon.tsx`, `adaptive-material{,.ios,.android}.tsx`, `src/foundation/accessibility/`
-- [ ] iOS-only imports only in `.ios.tsx`; missing glass or blur never yields an invisible control
-- [ ] gates: Sol pass, Argent smoke, commit `feat: add foundation text, icon, and adaptive material components`, push
+- [x] red: component tests (roles, labels, 44-pt targets, icon mapping, adaptive-material fallback selection with identical geometry, glass-probe failure, scheme normalization)
+- [x] `app-text.tsx`, `icon.tsx`, `material-geometry.ts`, `adaptive-material{,-opaque,.ios,.android}.tsx`, `src/foundation/accessibility/`
+- [x] iOS-only imports only in `.ios.tsx`; missing or throwing glass capability degrades to blur, never an invisible control
+- [x] gates: Sol pass (after role-query remediation), Argent smoke, commit `feat: add foundation text, icon, and adaptive material components`, push
 
 ## T6 - foundation preview route
 

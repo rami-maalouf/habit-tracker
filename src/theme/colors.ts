@@ -3,6 +3,12 @@ import { Platform, PlatformColor } from 'react-native';
 
 export type ColorScheme = 'light' | 'dark';
 
+// react-native's useColorScheme can report null or 'unspecified'; every
+// consumer normalizes through this single policy (light unless clearly dark)
+export function normalizeScheme(value: string | null | undefined): ColorScheme {
+  return value === 'dark' ? 'dark' : 'light';
+}
+
 export const semanticRoles = [
   'label',
   'secondaryLabel',

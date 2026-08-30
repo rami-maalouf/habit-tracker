@@ -2,6 +2,7 @@
 export {
   brand,
   brandColor,
+  normalizeScheme,
   resolveSemanticPalette,
   semanticColor,
   semanticFallbacks,
