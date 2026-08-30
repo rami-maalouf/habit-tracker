@@ -153,6 +153,9 @@ describe('timeline, weekdays, and year comparison', () => {
     expect(current.previous[5]).toBe(2);
     const past = yearComparison(counts, 2025, 2026, 8);
     expect(past.selected.every((month) => month !== null)).toBe(true);
+    // a wholly future year has no available months at all
+    const future = yearComparison(counts, 2027, 2026, 8);
+    expect(future.selected.every((month) => month === null)).toBe(true);
   });
 });
 

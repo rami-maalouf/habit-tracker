@@ -16,8 +16,12 @@ export function yearComparison(
 ): YearComparison {
   const selectedRaw = monthlyCounts(countsByDate, selectedYear);
   const selected = selectedRaw.map((count, index) => {
-    // future months in the selected current year are unavailable, not zero
-    if (selectedYear === currentYear && index + 1 > currentMonth) {
+    // future months are unavailable, not zero: every month of a future
+    // year, and the months after the current one in the current year
+    if (
+      selectedYear > currentYear ||
+      (selectedYear === currentYear && index + 1 > currentMonth)
+    ) {
       return null;
     }
     return count;
