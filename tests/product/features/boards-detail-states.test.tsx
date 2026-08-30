@@ -228,6 +228,48 @@ describe('home extras', () => {
   });
 });
 
+describe('detail quick undo', () => {
+  beforeEach(() => {
+    resetProductCoreForTests();
+    alertSpy.mockClear();
+  });
+
+  it('offers a five-second undo after a detail quick check-in', async () => {
+    const boardId = await seedSimpleBoard('undoable');
+    renderRouter('src/app', { initialUrl: `/boards/${boardId}` });
+    await screen.findByTestId('detail-quick');
+
+    await press('detail-quick');
+    expect(await screen.findByTestId('detail-undo')).toBeOnTheScreen();
+    await press('detail-undo');
+    expect(screen.queryByTestId('detail-undo')).toBeNull();
+
+    const deps = await core();
+    const { getGroupedCheckInHistory } = jest.requireActual<
+      typeof import('@/core/domain/queries')
+    >('@/core/domain/queries');
+    const history = await getGroupedCheckInHistory(deps, boardId);
+    if (!history.ok) {
+      throw new Error('history query failed');
+    }
+    expect(history.value).toHaveLength(0);
+  });
+
+  it('expires the detail undo window after five seconds', async () => {
+    const boardId = await seedSimpleBoard('fleeting detail');
+    renderRouter('src/app', { initialUrl: `/boards/${boardId}` });
+    await screen.findByTestId('detail-quick');
+
+    await press('detail-quick');
+    expect(await screen.findByTestId('detail-undo')).toBeOnTheScreen();
+    await act(async () => {
+      jest.advanceTimersByTime(5100);
+      await Promise.resolve();
+    });
+    expect(screen.queryByTestId('detail-undo')).toBeNull();
+  });
+});
+
 describe('failure surfaces behind stale screens', () => {
   beforeEach(() => {
     resetProductCoreForTests();
