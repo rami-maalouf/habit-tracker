@@ -20,6 +20,8 @@ import {
   resetProductCoreForTests,
 } from '../../../src/testing/product-core.mock';
 import { fireEvent, renderComponent, renderRouter, screen, settle } from '../../../src/testing/render';
+import { within, act } from '@testing-library/react-native';
+import { AppState } from 'react-native';
 
 jest.mock('expo-haptics', () => ({
   impactAsync: jest.fn(() => Promise.resolve()),
@@ -80,6 +82,7 @@ async function seedAgedBoardWithData(): Promise<BoardId> {
   mockClock.utcMs = Date.UTC(2026, 7, 30, 16, 0);
   const deps = await core();
   const days = [
+    '2025-12-30',
     '2026-08-15', '2026-08-16', '2026-08-17', '2026-08-20',
     '2026-08-21', '2026-08-22', '2026-08-23', '2026-08-29',
   ];
@@ -138,9 +141,12 @@ describe('analytics sheet', () => {
 
     await press('timeline-year-previous');
     expect(screen.getByTestId('timeline-year')).toHaveTextContent('2025');
+    // the earliest data year is the floor
+    const previous = screen.getByTestId('timeline-year-previous');
+    expect(previous.props.accessibilityState?.disabled).toBe(true);
     await press('timeline-year-next');
     expect(screen.getByTestId('timeline-year')).toHaveTextContent('2026');
-    // the current year is the ceiling
+    // the current logical year is the ceiling
     const next = screen.getByTestId('timeline-year-next');
     expect(next.props.accessibilityState?.disabled).toBe(true);
   });
@@ -201,6 +207,93 @@ describe('analytics sheet', () => {
     jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
   });
 
+  it('shows the streak empty card before the first completed day', async () => {
+    // a board whose only check-in is deleted has history but no streaks
+    const boardId = await seedBoard('never started');
+    const deps = await core();
+    const { createCheckIn: createDirect, removeCheckIn } = jest.requireActual<
+      typeof import('@/core/domain/commands')
+    >('@/core/domain/commands');
+    const created = await createDirect(deps, {
+      commandId: newCommandId(),
+      boardId,
+      source: 'app',
+    });
+    if (!created.ok) {
+      throw new Error('seed failed');
+    }
+    const removed = await removeCheckIn(deps, {
+      commandId: newCommandId(),
+      checkInId: created.value.checkInId,
+    });
+    expect(removed.ok).toBe(true);
+
+    renderRouter('src/app', { initialUrl: `/boards/${boardId}/analytics` });
+    expect(await screen.findByTestId('streak-empty')).toBeOnTheScreen();
+    expect(screen.queryByText(/Longest streak - 0/)).toBeNull();
+  });
+
+  it('explains an empty selected year and a prior year without data', async () => {
+    const boardId = await seedAgedBoardWithData();
+    renderRouter('src/app', { initialUrl: `/boards/${boardId}/analytics` });
+    await screen.findByTestId('timeline-year');
+
+    // 2025 has one check-in; 2024 has none for either card
+    await press('timeline-year-previous');
+    expect(await screen.findByTestId('timeline-summary')).toHaveTextContent(/Dec 1/);
+
+    // the 2026 comparison's prior year (2025) has data, so no note
+    expect(screen.queryByTestId('comparison-no-prior')).toBeNull();
+    await press('comparison-year-previous');
+    // 2025 selected: its prior year 2024 has no data and says so
+    expect(await screen.findByTestId('comparison-no-prior')).toHaveTextContent(
+      'No check-ins in 2024.',
+    );
+  });
+
+  it('shows the streak summary spans alongside the longest label', async () => {
+    const boardId = await seedAgedBoardWithData();
+    renderRouter('src/app', { initialUrl: `/boards/${boardId}/analytics` });
+    const summary = await screen.findByTestId('streak-summary');
+    expect(summary).toHaveTextContent(/Spans:/);
+    expect(summary).toHaveTextContent(/Aug 20 to Aug 23/);
+  });
+
+  it('refreshes queries when the app returns to the foreground', async () => {
+    const boardId = await seedAgedBoardWithData();
+    const handlers: ((state: string) => void)[] = [];
+    const subscribeSpy = jest
+      .spyOn(AppState, 'addEventListener')
+      .mockImplementation((_type, handler) => {
+        handlers.push(handler as (state: string) => void);
+        return { remove: jest.fn() } as never;
+      });
+
+    renderRouter('src/app', { initialUrl: `/boards/${boardId}/analytics` });
+    await screen.findByTestId('timeline-summary');
+
+    // an out-of-process writer adds a record while the app is backgrounded
+    const deps = await core();
+    const created = await createCheckIn(deps, {
+      commandId: newCommandId(),
+      boardId,
+      logicalDate: '2026-08-30' as LogicalDate,
+      source: 'app',
+    });
+    expect(created.ok).toBe(true);
+
+    act(() => {
+      for (const handler of handlers) {
+        // a background transition does not refresh; only active does
+        handler('background');
+        handler('active');
+      }
+    });
+    await settle();
+    expect(screen.getByTestId('timeline-summary')).toHaveTextContent(/Aug 9/);
+    subscribeSpy.mockRestore();
+  });
+
   it('renders chart edge cases without markers or with scaled axes', async () => {
     renderComponent(
       <>
@@ -237,9 +330,14 @@ describe('analytics sheet', () => {
       });
     }
     // an all-zero year draws no latest-month dot, and all-null consistency
-    // draws no columns
-    expect(screen.getByTestId('unit-line')).toBeOnTheScreen();
-    expect(screen.getByTestId('unit-columns')).toBeOnTheScreen();
+    // draws no columns or marker
+    expect(within(screen.getByTestId('unit-line')).queryAllByTestId('svg-Circle')).toHaveLength(0);
+    expect(within(screen.getByTestId('unit-columns')).queryAllByTestId('svg-Rect')).toHaveLength(0);
+    expect(within(screen.getByTestId('unit-columns')).queryAllByTestId('svg-Circle')).toHaveLength(0);
+    // the scaled bar chart draws both series
+    expect(
+      within(screen.getByTestId('unit-bars')).queryAllByTestId('svg-Rect').length,
+    ).toBeGreaterThanOrEqual(13);
   });
 
   it('splits a cross-month streak span into month rows ending at the window end', () => {
@@ -263,6 +361,13 @@ describe('analytics sheet', () => {
 describe('journal', () => {
   beforeEach(() => {
     resetProductCoreForTests();
+  });
+
+  it('recovers from a missing board on the journal route', async () => {
+    renderRouter('src/app', {
+      initialUrl: '/boards/00000000-0000-4000-8000-00000000dead/journal',
+    });
+    expect(await screen.findByText('This board is not available.')).toBeOnTheScreen();
   });
 
   it('surfaces a failed journal load with a retry', async () => {
@@ -300,8 +405,11 @@ describe('journal', () => {
 
     renderRouter('src/app', { initialUrl: `/boards/${boardId}/journal` });
     expect(await screen.findByText('a good day')).toBeOnTheScreen();
-    // only noted check-ins appear
-    expect(screen.getAllByLabelText(/Journal entry/)).toHaveLength(1);
+    // only noted check-ins appear, and the row's label carries the note
+    // itself, not just its metadata
+    const rows = screen.getAllByLabelText(/Journal entry/);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].props.accessibilityLabel).toContain('a good day');
 
     fireEvent.press(screen.getByText('a good day'));
     await settle();

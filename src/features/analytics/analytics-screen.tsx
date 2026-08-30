@@ -3,11 +3,13 @@ import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
-import { parseLogicalDate } from '@/core/calendar/logical-date';
+import { currentLogicalDate, parseLogicalDate } from '@/core/calendar/logical-date';
 import type { BoardId } from '@/core/domain/ids';
+import type { Board } from '@/core/domain/entities';
 import {
   getBoard,
   getConsistencyAnalytics,
+  getEarliestCheckInDate,
   getStreakAnalytics,
   getTimelineAnalytics,
   getWeekdayAnalytics,
@@ -124,29 +126,8 @@ function InsufficientCard({ message, testID }: { message: string; testID: string
 
 export function AnalyticsScreen({ boardId }: { boardId: BoardId }) {
   const router = useRouter();
-  const scheme = useScheme();
-  const { core } = useProduct();
-  const currentYear = Number(
-    new Intl.DateTimeFormat('en-US', {
-      year: 'numeric',
-      timeZone: core.clock.timeZoneId(),
-    }).format(new Date(core.clock.nowUtcMs())),
-  );
-  const [timelineYear, setTimelineYear] = useState(currentYear);
-  const [comparisonYear, setComparisonYear] = useState(currentYear);
-
   const board = useProductQuery((c) => getBoard(c, boardId), [boardId]);
-  const timeline = useProductQuery(
-    (c) => getTimelineAnalytics(c, boardId, timelineYear),
-    [boardId, timelineYear],
-  );
-  const weekdays = useProductQuery((c) => getWeekdayAnalytics(c, boardId), [boardId]);
-  const comparison = useProductQuery(
-    (c) => getYearComparison(c, boardId, comparisonYear),
-    [boardId, comparisonYear],
-  );
-  const consistency = useProductQuery((c) => getConsistencyAnalytics(c, boardId), [boardId]);
-  const streaks = useProductQuery((c) => getStreakAnalytics(c, boardId), [boardId]);
+  const earliest = useProductQuery((c) => getEarliestCheckInDate(c, boardId), [boardId]);
 
   if (board.status === 'error') {
     return (
@@ -158,7 +139,7 @@ export function AnalyticsScreen({ boardId }: { boardId: BoardId }) {
       </View>
     );
   }
-  if (board.status !== 'ready') {
+  if (board.status !== 'ready' || earliest.status === 'loading') {
     return <View testID="analytics-loading" style={{ flex: 1 }} />;
   }
 
@@ -187,16 +168,79 @@ export function AnalyticsScreen({ boardId }: { boardId: BoardId }) {
     );
   }
 
+  return (
+    <AnalyticsBody
+      boardId={boardId}
+      record={record}
+      earliestDate={earliest.status === 'ready' ? earliest.value : null}
+    />
+  );
+}
+
+function AnalyticsBody({
+  boardId,
+  record,
+  earliestDate,
+}: {
+  boardId: BoardId;
+  record: Board;
+  earliestDate: string | null;
+}) {
+  const scheme = useScheme();
+  const { core } = useProduct();
+  // the board's shifted start of day decides which year "today" is in
+  const logicalToday = currentLogicalDate(
+    core.clock.nowUtcMs(),
+    core.clock.timeZoneId(),
+    record.startOfDayMinute,
+  );
+  const currentYear = Number(logicalToday.slice(0, 4));
+  const currentMonth = Number(logicalToday.slice(5, 7));
+  // the selectors reach back exactly as far as the data does
+  const minYear = earliestDate ? Number(earliestDate.slice(0, 4)) : currentYear;
+  const [timelineYear, setTimelineYear] = useState(currentYear);
+  const [comparisonYear, setComparisonYear] = useState(currentYear);
+
+  const timeline = useProductQuery(
+    (c) => getTimelineAnalytics(c, boardId, timelineYear),
+    [boardId, timelineYear],
+  );
+  const weekdays = useProductQuery((c) => getWeekdayAnalytics(c, boardId), [boardId]);
+  const comparison = useProductQuery(
+    (c) => getYearComparison(c, boardId, comparisonYear),
+    [boardId, comparisonYear],
+  );
+  const consistency = useProductQuery((c) => getConsistencyAnalytics(c, boardId), [boardId]);
+  const streaks = useProductQuery((c) => getStreakAnalytics(c, boardId), [boardId]);
+
   const colors = deriveBoardColors(record.accentHex, scheme);
   const queryError = [timeline, weekdays, comparison, consistency, streaks].find(
     (query) => query.status === 'error',
   );
 
-  const timelineValues = timeline.status === 'ready' && timeline.value ? timeline.value.months : null;
+  // future months of the current logical year are unavailable, not zero
+  const timelineValues =
+    timeline.status === 'ready' && timeline.value
+      ? timeline.value.months.map((value, index) =>
+          timelineYear === currentYear && index + 1 > currentMonth ? null : value,
+        )
+      : null;
+  const timelineTotal = timelineValues
+    ? timelineValues.reduce<number>((sum, value) => sum + (value ?? 0), 0)
+    : 0;
   const weekdayData = weekdays.status === 'ready' ? weekdays.value : null;
   const comparisonData = comparison.status === 'ready' ? comparison.value : null;
   const consistencyData = consistency.status === 'ready' ? consistency.value : null;
-  const streakData = streaks.status === 'ready' ? streaks.value : null;
+  const streakData =
+    streaks.status === 'ready' && streaks.value && streaks.value.allTimeLongest > 0
+      ? streaks.value
+      : null;
+  const previousYearTotal = comparisonData
+    ? comparisonData.previous.reduce((sum, value) => sum + value, 0)
+    : 0;
+  const weekdayTotal = weekdayData
+    ? weekdayData.weekdayCounts.reduce((sum, value) => sum + value, 0)
+    : 0;
 
   return (
     <View style={{ flex: 1, backgroundColor: semanticColor('groupedBackground', scheme) }}>
@@ -219,17 +263,19 @@ export function AnalyticsScreen({ boardId }: { boardId: BoardId }) {
           control={
             <YearControl
               year={timelineYear}
-              minYear={currentYear - 20}
+              minYear={minYear}
               maxYear={currentYear}
               onChange={setTimelineYear}
               testID="timeline-year"
             />
           }
         >
-          {timelineValues ? (
+          {timelineValues && timelineTotal > 0 ? (
             <>
               <ChartFrame
-                accessibilityLabel={`Timeline for ${timelineYear}: monthly check-in totals ${timelineValues.join(', ')}`}
+                accessibilityLabel={`Timeline for ${timelineYear}: monthly check-in totals ${timelineValues
+                  .map((value) => (value === null ? 'unavailable' : String(value)))
+                  .join(', ')}`}
                 testID="timeline-chart"
               >
                 {monthlyLinePaths({
@@ -241,13 +287,13 @@ export function AnalyticsScreen({ boardId }: { boardId: BoardId }) {
               </ChartFrame>
               <AppText variant="footnote" testID="timeline-summary">
                 {`${timelineYear}: ${timelineValues
-                  .map((value, index) => `${MONTH_SHORT[index]} ${value}`)
-                  .join(', ')}. Total ${timelineValues.reduce((sum, value) => sum + value, 0)}.`}
+                  .map((value, index) => `${MONTH_SHORT[index]} ${value === null ? 'n/a' : value}`)
+                  .join(', ')}. Total ${timelineTotal}.`}
               </AppText>
             </>
           ) : (
             <InsufficientCard
-              message="No check-ins in this year yet."
+              message={`No check-ins in ${timelineYear} yet.`}
               testID="timeline-empty"
             />
           )}
@@ -306,7 +352,11 @@ export function AnalyticsScreen({ boardId }: { boardId: BoardId }) {
             </>
           ) : (
             <InsufficientCard
-              message="Weekday analysis needs at least seven eligible days of history."
+              message={
+                weekdayData && weekdayTotal === 0 && consistencyData !== null
+                  ? 'No check-ins in the past 12 months yet.'
+                  : 'Weekday analysis needs at least seven eligible days of history.'
+              }
               testID="weekday-empty"
             />
           )}
@@ -319,7 +369,7 @@ export function AnalyticsScreen({ boardId }: { boardId: BoardId }) {
           control={
             <YearControl
               year={comparisonYear}
-              minYear={currentYear - 20}
+              minYear={minYear}
               maxYear={currentYear}
               onChange={setComparisonYear}
               testID="comparison-year"
@@ -357,6 +407,11 @@ export function AnalyticsScreen({ boardId }: { boardId: BoardId }) {
                   <AppText variant="footnote">{String(comparisonData.previousYear)}</AppText>
                 </View>
               </View>
+              {previousYearTotal === 0 ? (
+                <AppText variant="footnote" testID="comparison-no-prior">
+                  {`No check-ins in ${comparisonData.previousYear}.`}
+                </AppText>
+              ) : null}
               <AppText variant="footnote" testID="comparison-summary">
                 {`${comparisonData.selectedYear}: ${comparisonData.selected
                   .map((value, index) => `${MONTH_SHORT[index]} ${value === null ? 'n/a' : value}`)
@@ -434,12 +489,18 @@ export function AnalyticsScreen({ boardId }: { boardId: BoardId }) {
                 })}
               </ChartFrame>
               <AppText variant="footnote" testID="streak-summary">
-                {`Longest streak - ${streakData.allTimeLongest} ${streakData.allTimeLongest === 1 ? 'day' : 'days'}.`}
+                {`Longest streak - ${streakData.allTimeLongest} ${streakData.allTimeLongest === 1 ? 'day' : 'days'}. ${
+                  streakData.spans.length > 0
+                    ? `Spans: ${streakData.spans
+                        .map((span) => formatSpan(span.startDate, span.endDate))
+                        .join('; ')}.`
+                    : 'No streaks inside the last twelve months.'
+                }`}
               </AppText>
             </>
           ) : (
             <InsufficientCard
-              message="Streaks appear once the board has check-ins."
+              message="Streaks appear after your first completed day."
               testID="streak-empty"
             />
           )}
@@ -447,6 +508,14 @@ export function AnalyticsScreen({ boardId }: { boardId: BoardId }) {
       </ScrollView>
     </View>
   );
+}
+
+function formatSpan(startDate: string, endDate: string): string {
+  const start = parseLogicalDate(startDate as never);
+  const end = parseLogicalDate(endDate as never);
+  const startText = `${MONTH_SHORT[start.month - 1]} ${start.day}`;
+  const endText = `${MONTH_SHORT[end.month - 1]} ${end.day}`;
+  return startDate === endDate ? startText : `${startText} to ${endText}`;
 }
 
 // slices streak spans into month rows for the gantt chart

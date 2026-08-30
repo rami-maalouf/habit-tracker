@@ -53,7 +53,9 @@ export function gridColor(scheme: ColorScheme): string {
 }
 
 type MonthlyLineProps = {
-  values: number[];
+  // null marks an unavailable month (future in the current year); the line
+  // stops there instead of drawing an invented zero
+  values: (number | null)[];
   monthLabels: string[];
   accent: string;
   scheme: ColorScheme;
@@ -65,17 +67,31 @@ export function monthlyLinePaths({ values, monthLabels, accent, scheme }: Monthl
   return function MonthlyLine(width: number, height: number) {
     const labelBand = 18;
     const plotHeight = height - labelBand;
-    const max = niceMax(Math.max(...values, 1));
+    const max = niceMax(Math.max(...values.map((value) => value ?? 0), 1));
     const stepX = width / 12;
     const yFor = (value: number) => plotHeight - (value / max) * (plotHeight - 8) - 4;
-    const points = values.map((value, index) => ({
-      x: stepX * index + stepX / 2,
-      y: yFor(value),
-    }));
-    const path = points
-      .map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`)
-      .join(' ');
-    const lastWithData = values.reduce((keep, value, index) => (value > 0 ? index : keep), -1);
+    const points = values.map((value, index) =>
+      value === null
+        ? null
+        : {
+            x: stepX * index + stepX / 2,
+            y: yFor(value),
+          },
+    );
+    let path = '';
+    let drawing = false;
+    for (const point of points) {
+      if (point === null) {
+        drawing = false;
+        continue;
+      }
+      path += `${drawing ? 'L' : 'M'}${point.x.toFixed(1)},${point.y.toFixed(1)} `;
+      drawing = true;
+    }
+    const lastWithData = values.reduce<number>(
+      (keep, value, index) => (value !== null && value > 0 ? index : keep),
+      -1,
+    );
     const labelColor = semanticColor('secondaryLabel', scheme) as string;
     return (
       <>
@@ -90,11 +106,11 @@ export function monthlyLinePaths({ values, monthLabels, accent, scheme }: Monthl
             strokeWidth={0.5}
           />
         ))}
-        <Path d={path} stroke={accent} strokeWidth={2} fill="none" />
-        {lastWithData >= 0 ? (
+        <Path d={path.trim()} stroke={accent} strokeWidth={2} fill="none" />
+        {lastWithData >= 0 && points[lastWithData] ? (
           <Circle
-            cx={points[lastWithData].x}
-            cy={points[lastWithData].y}
+            cx={(points[lastWithData] as { x: number }).x}
+            cy={(points[lastWithData] as { y: number }).y}
             r={5}
             fill={semanticColor('background', scheme) as string}
             stroke={accent}
