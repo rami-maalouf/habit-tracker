@@ -74,16 +74,17 @@ Every task ends with: full validation suite, independent GPT-5.6 Sol pass, Argen
 
 ## T8 - exports, coverage gate, module closure
 
-- [ ] `bunx expo export --platform ios --output-dir dist-validation/ios` succeeds
-- [ ] `bunx expo export --platform android --output-dir dist-validation/android` succeeds with no iOS-only module resolution
-- [ ] `bun run validate`, `bunx expo-doctor`, `git diff --check` pass
-- [ ] `git ls-files` has no private image, `.artifacts/`, `dist-validation/`, `ios/`, or `android/` entry
-- [ ] all 22 success criteria confirmed in `checkpoints.md`
-- [ ] gates: Sol pass, Argent smoke, commit `chore: close native-foundation module validation`, push
+- [x] `bunx expo export --platform ios --output-dir dist-validation/ios` succeeds
+- [x] `bunx expo export --platform android --output-dir dist-validation/android` succeeds with no iOS-only module resolution
+- [x] final `bunx expo run:ios` with `ios.deploymentTarget` 18.6 builds and installs; Argent smoke clean
+- [x] `bun run validate` (39/39, coverage 97.19/93.54/93.18/100), `bunx expo-doctor` 21/21, `git diff --check` pass
+- [x] `git ls-files` has no private image, `.artifacts/`, `dist-validation/`, `ios/`, or `android/` entry
+- [x] all 22 success criteria confirmed in `checkpoints.md`
+- [x] gates: Sol pass, Argent smoke, closure commit, push
 
 ## Standing human gates
 
-- [ ] T1 privileged commands (license accept, first launch)
-- [ ] simulator equivalence decision if the iOS 26.6 runtime is absent
-- [ ] T7 visual baseline approval
-- [ ] approval of this plan and todo before any implementation begins
+- [x] T1 privileged step (Xcode license) completed by the human
+- [x] simulator equivalence approved: iPhone 17 Pro, iOS 27.0
+- [x] T7 visual baselines approved (all seven captures)
+- [x] plan execution approved ("Let's run it", plus the goal directive to complete the specification)

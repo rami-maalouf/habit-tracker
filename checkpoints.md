@@ -95,6 +95,42 @@ Evidence images live under `.artifacts/` or system temp paths and stay out of Gi
 7. Deviations from the reference: none. Notable in-spec decisions: `expo-glass-effect` availability probe wrapped in try/catch degrading to blur; shared `adaptive-material-opaque` base keeps neutral and android boundaries identical; Icon uses `expo-image` `sf:` sources on iOS and accessible glyph text elsewhere; decorative icons are hidden from assistive technology.
 8. Commit and push: `279091c`, pushed to `origin/main`.
 
+## T8 - exports, coverage gate, and module closure
+
+1. Task id: T8. Acceptance: iOS and Android exports succeed; final native build with the approved configuration installs and launches; every command gate passes; repository hygiene holds; all 22 success criteria confirmed.
+2. Author: Fable 5. Delegated agents: none.
+3. Files changed: `checkpoints.md`, `tasks/todo.md` (closure records only; no product code).
+4. Tests and static checks: `bun run validate` 39/39 with coverage 97.19/93.54/93.18/100; `bunx expo-doctor` 21/21; `git diff --check` clean; `bunx expo export --platform ios` and `--platform android` both succeeded (`dist-validation/`, ignored); the Android bundle resolved with no iOS-only module failure, closing the T5 resolver-level risk; final `bunx expo run:ios --device <approved UDID>` built and installed with `ios.deploymentTarget` 18.6 (Build Succeeded, exit 0).
+5. GPT-5.6 Sol review: fail on first pass (closure bookkeeping: missing T6/T7 hashes, unchecked todo items, self-hash paradox). All records remediated; pass on re-review, with the two-commit closure protocol confirmed sound.
+6. Argent evidence (target `93EEF062-B4DC-4989-AF77-CF47EE2A9816`), tests type: rebuilt client launched, root route described (`Ripples`, `Native foundation ready`), `debugger-log-registry` connected with 0 entries.
+7. Deviations from the reference: none.
+8. Commit and push: closure commit `chore: close native-foundation module validation`; its hash is recorded in this field by the immediate follow-up commit `docs: record closure commit hash`, and both are pushed together.
+
+### Success criteria closure (all 22 true)
+
+1. `CAPABILITY-MAP.md` identifies `native-foundation`; the spec stays scoped to it.
+2. `xcrun --find simctl` succeeds; Argent listed and booted the target (T1).
+3. Human-approved equivalent simulator: iPhone 17 Pro, iOS 27.0, 402x874 pt verified (T1).
+4. App installs and launches through the dev client with `com.ramimaalouf.habittracker` (T2, re-proven T8).
+5. Routes load from `src/app`; `/` always resolves; `+not-found` recovers behaviorally (T3).
+6. Starter removed with no dead imports, routes, assets, or dependencies (T3).
+7. `/` renders stack title `Ripples`, selectable `Native foundation ready`, automatic insets, nothing else (T3).
+8. `/foundation-preview` renders the seven ordered sections and every labeled fixture from deterministic data (T6).
+9. Production-mode router test redirects `/foundation-preview` to `/` with no fixture rendered (T6).
+10. `@expo/ui` controls render in a native Host with contract labels and changing values on iOS; Android-safe Host composition passes under mocks and the Android export resolves cleanly (T6, T8).
+11. Glass runtime reports and renders `liquid glass`; `material=fallback` reports and renders `blur` with identical geometry (T6, T7).
+12. Light and dark full-resolution captures show every section with no clipping, overlap, missing material, or unsafe insets; custom contrast pairs meet 4.5:1 by token tests (T7).
+13. At font scale 3.143 every section stays reachable and operable with no clipping after the line-height refinement (T7).
+14. `describe` exposes the title, five labeled controls, enabled/disabled/selected/value states, and the 0 -> 1 action count (T6, T7).
+15. Reduce Motion keeps state changes immediate; no authored decorative animation exists; reduced-motion policy unit-tested (T4, T7).
+16. `expo run:ios`, the iOS export, and the Android export all succeed (T8).
+17. All command gates pass with coverage at or above 90 on all four metrics (T8).
+18. Debugger log registry shows no authored warning, error, or unhandled rejection at any checkpoint; no upstream warning needed approval.
+19. The screenshot diff contains only explained regions; baseline creation carries recorded human approval (T7).
+20. Every task has a Fable 5 checkpoint, an independent GPT-5.6 Sol pass, and Argent evidence.
+21. Isolated lowercase conventional commits, no signatures or co-authors, pushed to `origin/main` after gates: `34a9874`, `7bc374d`, `04e3d99`, `8548511`, `279091c`, `41de0c3`, `fa1e443`, plus the T8 closure commit.
+22. `git ls-files` contains no private screenshot, `.artifacts/`, `dist-validation/`, or generated `ios/`/`android/` entry (app icon assets are public app resources).
+
 ## T7 - development client build and full device validation
 
 1. Task id: T7. Acceptance: full light and dark captures of the preview, forced-fallback comparison, Dynamic Type at an accessibility size, Reduce Motion and Increase Contrast via the Settings app, clean runtime logs, screenshot-diff harness, human-approved baselines.
@@ -111,7 +147,7 @@ Evidence images live under `.artifacts/` or system temp paths and stay out of Gi
    - screenshot-diff harness: current vs the light-bottom candidate returned 0.46 percent mismatch in two explained regions (header back-button state differs by navigation entry; text antialiasing on one label). No unexplained region.
    - appearance and content size restored (light, large) after the checkpoint.
 7. Deviations from the reference: none. Approved baselines (human approval 2026-08-30, see Approvals log): `.artifacts/argent/native-foundation/{light-top,light-bottom,dark-top,dark-bottom,light-fallback,axxl-interaction,increase-contrast-reduce-motion}.png`. Baseline images stay ignored by Git.
-8. Commit and push: recorded after gates pass.
+8. Commit and push: `fa1e443`, pushed to `origin/main`.
 
 ## T6 - foundation preview route
 
@@ -126,4 +162,4 @@ Evidence images live under `.artifacts/` or system temp paths and stay out of Gi
    - `debugger-log-registry`: 0 entries.
    - screenshots auto-captured with each interaction; full-resolution baselines happen in T7.
 7. Deviations from the reference: none. Notable in-spec decisions: `@expo/ui` receives a reviewed behavior-focused Jest mock (`src/testing/expo-ui.mock.tsx`) because jest-expo ships none and the real package needs the native ObservableState runtime; test infrastructure under `src/testing/` is excluded from coverage as a reviewed exclusion; the accessibility section labels the forced-fallback state `Material mode:` so material status text stays unique per section. Accepted risks from review: the universal `@expo/ui` Slider and Picker expose no accessible-name prop, so their name association is the adjacent text label pinned by real testID props in tests and confirmed by the Argent describe evidence; Jest mocks cannot prove native Host rendering or the native accessibility tree, which rest on the Argent evidence in field 6 and the T7 device validation.
-8. Commit and push: recorded after gates pass.
+8. Commit and push: `41de0c3`, pushed to `origin/main`.
