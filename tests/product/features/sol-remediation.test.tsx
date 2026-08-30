@@ -451,6 +451,86 @@ describe('round two: session isolation and read-only surfaces', () => {
   });
 });
 
+describe('self-review fixes', () => {
+  beforeEach(() => {
+    resetProductCoreForTests();
+    alertSpy.mockClear();
+  });
+
+  it('saves a board with amounts off despite stale hidden amount text', async () => {
+    renderRouter('src/app', { initialUrl: '/' });
+    await screen.findByTestId('empty-create-board');
+    await press('empty-create-board');
+    await screen.findByTestId('board-title-input');
+    fireEvent.changeText(screen.getByTestId('board-title-input'), 'toggled');
+
+    // enter garbage while amounts are on, then turn amounts off
+    fireEvent(screen.getByTestId('amounts-toggle'), 'valueChange', true);
+    await settle();
+    fireEvent.changeText(await screen.findByTestId('quick-amount-input'), 'not a number');
+    fireEvent(screen.getByTestId('amounts-toggle'), 'valueChange', false);
+    await settle();
+
+    await press('board-form-save');
+    await settle();
+    expect(screen).toHavePathname('/');
+    expect(screen.getByText('toggled')).toBeOnTheScreen();
+  });
+
+  it('recovers a check-in edit conflict by reloading the record', async () => {
+    const boardId = await seedBoard('conflict habit');
+    const deps = await core();
+    const created = await createCheckIn(deps, {
+      commandId: newCommandId(),
+      boardId,
+      logicalDate: '2026-08-29' as LogicalDate,
+      note: 'original',
+      source: 'app',
+    });
+    if (!created.ok) {
+      throw new Error('seed check-in failed');
+    }
+
+    renderRouter('src/app', { initialUrl: `/boards/${boardId}/check-ins` });
+    fireEvent.press(await screen.findByLabelText(/conflict habit/));
+    await settle();
+    await screen.findByTestId('check-in-note');
+
+    // another writer updates the record behind the open sheet
+    const { updateCheckIn } = jest.requireActual<typeof import('@/core/domain/commands')>(
+      '@/core/domain/commands',
+    );
+    const history = await getGroupedCheckInHistory(deps, boardId);
+    if (!history.ok) {
+      throw new Error('history query failed');
+    }
+    const current = history.value[0].days[0].checkIns[0];
+    const concurrent = await updateCheckIn(deps, {
+      commandId: newCommandId(),
+      checkInId: current.id,
+      expectedMutationStamp: current.mutationStamp,
+      logicalDate: current.logicalDate,
+      note: 'changed elsewhere',
+    });
+    expect(concurrent.ok).toBe(true);
+
+    fireEvent.changeText(screen.getByTestId('check-in-note'), 'my edit');
+    await press('check-in-save');
+    expect(await screen.findByTestId('check-in-conflict')).toBeOnTheScreen();
+    await settle();
+
+    // the reloaded sheet carries the fresh stamp; a second save lands
+    fireEvent.changeText(await screen.findByTestId('check-in-note'), 'my second edit');
+    await press('check-in-save');
+    await settle();
+    const after = await getGroupedCheckInHistory(deps, boardId);
+    if (!after.ok) {
+      throw new Error('history query failed');
+    }
+    expect(after.value[0].days[0].checkIns[0].note).toBe('my second edit');
+  });
+});
+
 describe('round four: archived transitions and shifted days', () => {
   beforeEach(() => {
     resetProductCoreForTests();

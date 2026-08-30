@@ -97,6 +97,9 @@ function instantFor(
 export function CheckInFormScreen({ boardId, checkInId }: CheckInFormScreenProps) {
   const router = useRouter();
   const { core } = useProduct();
+  // conflicts remount the body with the reloaded record, so the notice
+  // lives here where the remount cannot wipe it
+  const [conflict, setConflict] = useState(false);
   const board = useProductQuery((c) => getBoard(c, boardId), [boardId]);
   const existing = useProductQuery(
     (c) =>
@@ -118,7 +121,7 @@ export function CheckInFormScreen({ boardId, checkInId }: CheckInFormScreenProps
         <AppText variant="title2" accessibilityRole="header">
           This record is not available.
         </AppText>
-        <PrimaryButton title="Back" onPress={() => router.back()} />
+        <PrimaryButton title="Back to Boards" onPress={() => router.dismissTo('/')} />
       </View>
     );
   }
@@ -139,21 +142,35 @@ export function CheckInFormScreen({ boardId, checkInId }: CheckInFormScreenProps
           This board is archived.
         </AppText>
         <AppText>Restore it from its board page to change its check-ins.</AppText>
-        <PrimaryButton title="Back" onPress={() => router.back()} />
+        <PrimaryButton title="Back to Boards" onPress={() => router.dismissTo('/')} />
       </View>
     );
   }
 
   return (
-    <CheckInFormBody
-      board={board.value}
-      record={loadedRecord}
-      today={currentLogicalDate(
-        core.clock.nowUtcMs(),
-        core.clock.timeZoneId(),
-        board.value.startOfDayMinute,
-      )}
-    />
+    <View style={{ flex: 1 }}>
+      {conflict ? (
+        <View style={{ padding: spacing.lg }}>
+          <AppText testID="check-in-conflict">
+            This check-in changed elsewhere. The latest values are shown - review your changes
+            and save again.
+          </AppText>
+        </View>
+      ) : null}
+      <CheckInFormBody
+        // a reloaded record reseeds every field, so a conflict retry carries
+        // the fresh mutation stamp instead of failing forever
+        key={loadedRecord ? loadedRecord.mutationStamp : 'new'}
+        board={board.value}
+        record={loadedRecord}
+        onConflict={() => setConflict(true)}
+        today={currentLogicalDate(
+          core.clock.nowUtcMs(),
+          core.clock.timeZoneId(),
+          board.value.startOfDayMinute,
+        )}
+      />
+    </View>
   );
 }
 
@@ -162,10 +179,12 @@ function CheckInFormBody({
   board,
   record,
   today,
+  onConflict,
 }: {
   board: Board;
   record: CheckIn | null;
   today: LogicalDate;
+  onConflict: () => void;
 }) {
   const router = useRouter();
   const navigation = useNavigation();
@@ -202,6 +221,7 @@ function CheckInFormBody({
   );
   const [note, setNote] = useState(record?.note ?? '');
   const [error, setError] = useState<DomainError | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // a swipe-down or other removal of an edited form must confirm first
   usePreventRemove(dirty, ({ data }) => {
@@ -247,6 +267,10 @@ function CheckInFormBody({
   );
 
   const save = useCallback(async () => {
+    if (saving) {
+      return;
+    }
+    setSaving(true);
     setError(null);
     const amount =
       board.tracksAmount && amountText.trim().length > 0
@@ -279,10 +303,17 @@ function CheckInFormBody({
       invalidate();
       skipGuardRef.current = true;
       router.back();
-    } else {
-      setError(result.error);
+      return;
     }
-  }, [amountText, board, core, invalidate, logicalDate, nextCommandId, note, record, router, timeOfDay]);
+    if (result.error.code === 'conflict') {
+      // reload the record so the reseeded sheet carries the fresh stamp;
+      // the parent shows the notice across the remount
+      onConflict();
+      invalidate();
+    }
+    setError(result.error);
+    setSaving(false);
+  }, [amountText, board, core, deviceZone, invalidate, logicalDate, nextCommandId, note, occurrenceEdited, onConflict, record, router, saving, timeOfDay]);
 
   const confirmDelete = useCallback(() => {
     if (!record) {
@@ -313,7 +344,9 @@ function CheckInFormBody({
   const colors = deriveBoardColors(board.accentHex, scheme);
   const timePickerValue =
     timeOfDay === null
-      ? new Date(core.clock.nowUtcMs())
+      ? // an untimed record shows a neutral noon of its date; the value is
+        // only persisted once the user actually picks a time
+        dateFromLogical(logicalDate)
       : (() => {
           const { year, month, day } = parseLogicalDate(logicalDate);
           return new Date(year, month - 1, day, timeOfDay.hour, timeOfDay.minute, 0, 0);
