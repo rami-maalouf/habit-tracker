@@ -27,19 +27,21 @@ const sectionTitles = [
 ];
 
 describe('foundation preview (development)', () => {
-  it('renders the seven ordered sections', () => {
+  it('renders the seven ordered sections', async () => {
     renderRouter('src/app', { initialUrl: '/foundation-preview' });
 
+    await screen.findByText('Typography');
     const headers = screen.getAllByRole('header');
     const titles = headers.map((node) => node.props.children);
     expect(titles).toEqual(sectionTitles);
   });
 
-  it('renders every labeled fixture from the preview contract', () => {
+  it('renders every labeled fixture from the preview contract', async () => {
     const { radius, semanticRoles, shadows, spacing, typography } =
       require('@/theme') as typeof import('../../src/theme');
 
     renderRouter('src/app', { initialUrl: '/foundation-preview' });
+    await screen.findByText('Typography');
 
     // native controls by accessible role and name inside @expo/ui hosts
     expect(screen.getAllByTestId('expo-ui-host').length).toBeGreaterThanOrEqual(2);
@@ -81,38 +83,40 @@ describe('foundation preview (development)', () => {
     expect(screen.getByTestId('touch-target-marker')).toBeOnTheScreen();
   });
 
-  it('exposes disabled interaction states semantically', () => {
+  it('exposes disabled interaction states semantically', async () => {
     renderRouter('src/app', { initialUrl: '/foundation-preview' });
+    await screen.findByText('Typography');
 
     expect(screen.getByRole('button', { name: 'Disabled action' })).toBeDisabled();
     expect(screen.getByRole('switch', { name: 'Disabled switch' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Primary action' })).toBeEnabled();
   });
 
-  it('increments the action count through the haptic path', () => {
+  it('increments the action count through the haptic path', async () => {
     renderRouter('src/app', { initialUrl: '/foundation-preview' });
 
-    expect(screen.getByText('Action count: 0')).toBeOnTheScreen();
+    expect(await screen.findByText('Action count: 0')).toBeOnTheScreen();
     fireEvent.press(screen.getAllByText('Primary action')[0]);
     expect(screen.getByText('Action count: 1')).toBeOnTheScreen();
     expect(haptics.impactAsync).toHaveBeenCalled();
   });
 
-  it('reports liquid glass by default and blur when material=fallback forces the branch', () => {
+  it('reports liquid glass by default and blur when material=fallback forces the branch', async () => {
     glass.isLiquidGlassAvailable.mockReturnValue(true);
 
     renderRouter('src/app', { initialUrl: '/foundation-preview' });
-    expect(screen.getByText('Material: liquid glass')).toBeOnTheScreen();
+    expect(await screen.findByText('Material: liquid glass')).toBeOnTheScreen();
     expect(screen.getByText('Material mode: automatic')).toBeOnTheScreen();
     screen.unmount();
 
     renderRouter('src/app', { initialUrl: '/foundation-preview?material=fallback' });
-    expect(screen.getByText('Material: blur')).toBeOnTheScreen();
+    expect(await screen.findByText('Material: blur')).toBeOnTheScreen();
     expect(screen.getByText('Material mode: fallback forced')).toBeOnTheScreen();
   });
 
-  it('reports appearance, font scale, and reduce motion as selectable status text', () => {
+  it('reports appearance, font scale, and reduce motion as selectable status text', async () => {
     renderRouter('src/app', { initialUrl: '/foundation-preview' });
+    await screen.findByText('Typography');
 
     const statusLines = [
       screen.getByText(/^Appearance: (light|dark)$/),
@@ -130,12 +134,13 @@ describe('foundation preview (development)', () => {
 });
 
 describe('foundation preview (production mode)', () => {
-  it('renders no preview fixture and redirects to /', () => {
+  it('renders no preview fixture and redirects to /', async () => {
     const devFlag = global as unknown as { __DEV__: boolean };
     const original = devFlag.__DEV__;
     devFlag.__DEV__ = false;
     try {
       renderRouter('src/app', { initialUrl: '/foundation-preview' });
+      await screen.findByTestId('empty-create-board');
       expect(screen.queryByText('Primary action')).toBeNull();
       expect(screen.queryByText('Typography')).toBeNull();
       expect(screen).toHavePathname('/');
