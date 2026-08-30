@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { View } from 'react-native';
+import { AppState, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
 import type { CommandId } from '@/core/domain/ids';
@@ -72,6 +72,18 @@ export function ProductProvider({ children, coreOverride }: ProductProviderProps
   }, [coreOverride, attempt]);
 
   const invalidate = useCallback(() => setVersion((current) => current + 1), []);
+
+  // out-of-process writers (widgets, automations, sync) mutate the same
+  // database; returning to the foreground refreshes every mounted query.
+  // the in-process database-change hook lands with the widget stage.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        invalidate();
+      }
+    });
+    return () => subscription?.remove?.();
+  }, [invalidate]);
 
   const value = useMemo<ProductContextValue | null>(() => {
     if (state.status !== 'ready') {
