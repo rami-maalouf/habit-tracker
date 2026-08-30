@@ -104,6 +104,7 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
   const draft = draftState.draft;
   const [error, setError] = useState<DomainError | null>(null);
   const [conflict, setConflict] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [symbolPickerOpen, setSymbolPickerOpen] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState('');
   const [customColorOpen, setCustomColorOpen] = useState(false);
@@ -113,7 +114,11 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
   // identifies this sheet instance as the draft session owner
   const ownerId = useId();
 
-  // seed the shared draft store when the sheet opens or reloads
+  // seed the shared draft store when the sheet opens or reloads; '?? null'
+  // keeps the stamp stable across the create query's loading-to-ready flip
+  // so the fresh draft is not reseeded mid-typing
+  const seedStamp =
+    existing.status === 'ready' ? (existing.value?.mutationStamp ?? null) : null;
   useEffect(() => {
     if (boardId === null) {
       startDraft(newBoardDraft(), ownerId);
@@ -128,9 +133,7 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reseed only when the loaded record identity changes
-    // '?? null' keeps the dependency stable across the create query's
-    // loading-to-ready flip, so the fresh draft is not reseeded mid-typing
-  }, [boardId, existing.status === 'ready' ? (existing.value?.mutationStamp ?? null) : null]);
+  }, [boardId, ownerId, seedStamp]);
 
   // the draft session ends with the sheet, so a later direct navigation to
   // an options route cannot observe a stale draft as live
@@ -164,9 +167,10 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
   const colors = deriveBoardColors(draft.accentHex, scheme);
 
   const save = useCallback(async () => {
-    if (!draftMatches) {
+    if (!draftMatches || saving) {
       return;
     }
+    setSaving(true);
     setError(null);
     setConflict(false);
     const fields = draftToCommandFields(draft);
@@ -185,6 +189,7 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
       router.back();
       return;
     }
+    setSaving(false);
     if (result.error.code === 'conflict') {
       // a stale edit reloads the latest record for review
       setConflict(true);
@@ -197,7 +202,7 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
       invalidate();
     }
     setError(result.error);
-  }, [boardId, core, draft, draftMatches, editing, invalidate, nextCommandId, router]);
+  }, [boardId, core, draft, draftMatches, editing, invalidate, nextCommandId, router, saving]);
 
   const confirmArchive = useCallback(() => {
     if (!editing || !boardId) {
