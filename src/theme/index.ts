@@ -11,7 +11,7 @@ export {
 export type { BrandRole, ColorScheme, SemanticRole } from './colors';
 export { spacing } from './spacing';
 export type { SpacingToken } from './spacing';
-export { typography } from './typography';
+export { lineHeightFor, typography } from './typography';
 export type { TypographyVariant } from './typography';
 export { radius, radiusCurve } from './radius';
 export type { RadiusToken } from './radius';

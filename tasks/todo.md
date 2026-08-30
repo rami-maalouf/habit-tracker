@@ -60,16 +60,17 @@ Every task ends with: full validation suite, independent GPT-5.6 Sol pass, Argen
 
 ## T7 - development client build and full device validation
 
-- [ ] `bunx expo run:ios --device "iPhone 16 Pro"` installs and launches dev client (`com.ramimaalouf.habittracker`)
-- [ ] Argent describe of root and preview matches the contract (five controls, states, `Action count`)
-- [ ] light and dark full-resolution captures of every preview section
-- [ ] HUMAN: review first captures and approve as baselines (recorded in `checkpoints.md`)
-- [ ] `material=fallback` geometry and contrast comparison on the same simulator
-- [ ] Dynamic Type at accessibility-extra-extra-large: all sections reachable, no clipping; restore to large
-- [ ] Reduce Motion and Increase Contrast via Settings app (discovery-driven taps only); re-checkpoint; restore settings
-- [ ] debugger log registry: no authored warning, error, or unhandled rejection; upstream warnings linked and HUMAN approved
-- [ ] screenshot diff: no unexplained changed region
-- [ ] gates: Sol pass, commit `chore: record device validation baseline and checkpoint`, push
+- [x] dev client built and installed in T2 (`bunx expo run:ios --device <approved UDID>`); rebuild with final config re-verified in T8
+- [x] Argent describe of root and preview matches the contract (five controls, states, `Action count` 0 -> 1, at default and AXXL scales)
+- [x] light and dark full-resolution captures (top and bottom regions) plus fallback, AXXL, and contrast/motion captures
+- [x] HUMAN approved all seven captures as baselines (recorded in `checkpoints.md`)
+- [x] `material=fallback` comparison: blur branch, identical geometry, `Material mode: fallback forced`
+- [x] Dynamic Type at accessibility-extra-extra-large (font scale 3.143): all sections reachable, operable, no clipping after the line-height fix; restored to large
+- [x] Reduce Motion and Increase Contrast via Settings app (discovery-driven taps); re-checkpointed in-app; both restored and re-verified
+- [x] debugger log registry: 0 entries at every checkpoint
+- [x] screenshot diff: 0.46 percent, two explained regions, none unexplained
+- [x] two visible refinement iterations (dark-mode text color; dynamic type line heights) each with tests and re-captured evidence
+- [x] gates: Sol pass, commit, push
 
 ## T8 - exports, coverage gate, module closure
 

@@ -138,6 +138,13 @@ describe('typography', () => {
     }
     expect(typography.body.fontSize).toBe(17);
   });
+
+  it('applies the token line height only at the default font scale', () => {
+    const { lineHeightFor } = require('@/theme') as typeof import('../../src/theme');
+    expect(lineHeightFor('body', 1)).toBe(typography.body.lineHeight);
+    expect(lineHeightFor('body', 1.5)).toBeUndefined();
+    expect(lineHeightFor('largeTitle', 3.1)).toBeUndefined();
+  });
 });
 
 describe('radius', () => {

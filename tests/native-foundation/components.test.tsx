@@ -31,11 +31,15 @@ const { isLiquidGlassAvailable } = require('expo-glass-effect') as {
 const { materialGeometry } = require('@/components/foundation/material-geometry');
 
 describe('AppText', () => {
-  it('renders selectable body text by default', () => {
+  it('renders selectable body text in the semantic label color by default', () => {
     renderComponent(<AppText>hello</AppText>);
     const text = screen.getByText('hello');
     expect(text.props.selectable).toBe(true);
     expect(text).toHaveStyle({ fontSize: typography.body.fontSize });
+    // text must always carry the semantic label color so dark mode never
+    // renders label-on-background invisibly
+    const { semanticColor } = require('@/theme') as typeof import('../../src/theme');
+    expect(text).toHaveStyle({ color: semanticColor('label', 'light') });
   });
 
   it('applies the named variant and merges style overrides last', () => {

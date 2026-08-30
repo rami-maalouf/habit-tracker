@@ -18,3 +18,11 @@ export const typography = {
 } as const satisfies Record<string, TextStyle>;
 
 export type TypographyVariant = keyof typeof typography;
+
+// an explicit lineHeight breaks wrapping and clips glyphs at accessibility
+// font scales on the current react native version, so the token rhythm
+// applies only at the default scale and the platform line height takes over
+// once text scales
+export function lineHeightFor(variant: TypographyVariant, fontScale: number): number | undefined {
+  return fontScale === 1 ? typography[variant].lineHeight : undefined;
+}
