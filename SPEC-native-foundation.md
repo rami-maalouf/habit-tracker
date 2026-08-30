@@ -10,14 +10,14 @@ Date: 2026-08-30
 
 ## Approved assumptions and decisions
 
-1. This document specifies only the `native-foundation` module approved in `CAPABILITY-MAP.md`.
+1. This document specifies only the `native-foundation` module approved in `CAPABILITY-MAP.md` and is the first of exactly two project specifications.
 2. Fable 5 remains the implementation author, integration owner, and commit owner. GPT-5.6 Sol remains the independent verifier. The GPT-5.6 Sol session that finalized this specification performs no implementation work.
 3. The product minimum is iOS 18.6 even though Expo SDK 57 supports older iOS versions. The primary visual target is iOS 26.6 at a 402 by 874 point viewport.
 4. Android acceptance in this module is limited to platform-neutral architecture, automated component coverage, and a successful Android JavaScript and asset export. Android emulator acceptance belongs to `android-readiness`.
 5. The foundation dependencies in this document, including a direct Jest dependency, are approved in principle. Expo Install resolves exact SDK-compatible versions during implementation.
 6. The first deterministic visual capture becomes a baseline only after human review. Later pixel differences fail until they are explained and approved; a baseline is never updated merely to make a check pass.
 7. Each completed implementation task may be committed and pushed directly to `origin/main` only after its tests, independent verification, and Argent checkpoint pass.
-8. Approval of this specification authorizes Phase 2 planning by Fable 5. It does not authorize this GPT-5.6 Sol session to plan or implement the module.
+8. Approval of this specification authorizes implementation planning by Fable 5. It does not authorize this GPT-5.6 Sol session to plan or implement the module.
 
 ## Objective
 
@@ -56,7 +56,7 @@ The direct user is the person tracking habits in Ripples. The immediate consumer
 - Product analytics or networking
 - Store submission, production signing, or release automation
 
-Those capabilities belong to later module ids in `CAPABILITY-MAP.md`.
+Those capabilities belong to the second and only other project specification, `SPEC-ripples-product.md`.
 
 ## Team and execution model
 
@@ -568,4 +568,4 @@ None. The human approved the dependency set, direct Jest dependency, route migra
 
 If the local Xcode simulator installation requires a manual component download or reinstall, implementation pauses and requests human intervention. Argent is a completion gate and cannot be bypassed.
 
-Approval of this document authorizes Fable 5 to begin Phase 2 planning for `native-foundation` only. It does not authorize package installation, application code, or work on another module. Phase 2 must produce `tasks/plan.md` and `tasks/todo.md` for separate human review before implementation.
+Approval of this document authorizes Fable 5 to plan and implement `native-foundation` under the required gates. `SPEC-ripples-product.md` is the second and only other project specification. Fable 5 may maintain one implementation plan and task list across both specifications after both are approved. This GPT-5.6 Sol specification session remains unauthorized to install packages or change application code.

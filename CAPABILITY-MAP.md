@@ -3,7 +3,12 @@
 Status: Approved  
 Approved: 2026-08-30
 
-This initiative contains independently testable capabilities, so each module below will receive its own gated Specify -> Plan -> Tasks -> Implement cycle. Module ids are stable once this map is approved.
+This initiative contains independently testable capabilities with stable module ids. The complete implementation is governed by exactly two specifications:
+
+1. `SPEC-native-foundation.md` owns `native-foundation`.
+2. `SPEC-ripples-product.md` owns every remaining module from `tracking-core` through `android-readiness`.
+
+Module ids remain useful planning, ownership, checkpoint, and dependency units. They do not create additional specification gates.
 
 | Module id | Responsibility | Depends on |
 | --- | --- | --- |
@@ -13,7 +18,7 @@ This initiative contains independently testable capabilities, so each module bel
 | `board-configuration` | Create, edit, preview, symbols, colors, amount settings, time options, metric preferences, ordering, archive, restore, and delete policy | `boards` |
 | `check-in-history` | Grouped check-in history, manual entry, amounts, dates, times, editing, and deletion | `boards` |
 | `analytics` | Streak, consistency, timeline, current-month, weekday, year-comparison, and insufficient-data views | `boards` |
-| `widgets` | Platform-neutral widget projection and action contract plus all iOS WidgetKit families and interactive quick check-ins | `boards` |
+| `widgets` | Platform-neutral widget projection and action contract plus all iOS Home Screen system families and interactive quick check-ins | `boards` |
 | `reminders` | Reminder editor, weekday and time rules, notification permission, local scheduling, rescheduling, disable, and delete behavior | `board-configuration` |
 | `journal` | Chronological note timeline and note creation or editing through check-ins | `check-in-history` |
 | `settings` | Grouped settings, notification status, support and legal links, alternate app icons, version information, and archived-board entry point | `native-foundation`, `reminders` |
@@ -41,6 +46,8 @@ This initiative contains independently testable capabilities, so each module bel
 
 `native-foundation` runs first because every later implementation task requires an operational iOS simulator, an Argent checkpoint, and an independent verification pass. Both foundation modules must be implemented before `boards` begins.
 
+The build order is one implementation sequence under the two approved specifications. Fable 5 may divide it into tasks and checkpoints without producing another feature specification.
+
 ## Execution protocol
 
 - Fable 5 is the primary architect, code author, integration owner, and commit owner.
@@ -57,5 +64,6 @@ This initiative contains independently testable capabilities, so each module bel
 2. `cloud-sync` and `automations` remain post-visual-release extensions.
 3. `android-readiness` covers architecture and adapter verification, not a shipping Android UI in the iOS-first release.
 4. `native-foundation` is the first module, followed by `tracking-core`.
+5. The project uses exactly two specifications. No per-module specification is required after `SPEC-ripples-product.md`.
 
-Approval of this map authorizes Phase 1 for `native-foundation` only. It does not authorize specs for later modules, package changes, or application code.
+Approval of this map and the two specification documents authorizes Fable 5 to maintain one implementation plan and task list for the complete project. It does not authorize this specification session to install packages or change application code.
