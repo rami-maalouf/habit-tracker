@@ -5,6 +5,7 @@ import {
   getBoardHeatmap,
   getBoardSummary,
   getConsistencyAnalytics,
+  getEarliestCheckInDate,
   getGroupedCheckInHistory,
   getSevenDayStrip,
 } from '@/core/domain/queries';
@@ -496,6 +497,31 @@ describe('paged check-in history', () => {
     expect(bigDay.value.months[0].days[0].date).toBe('2026-09-04');
     expect(bigDay.value.months[0].days[0].count).toBe(4);
     expect(bigDay.value.months[0].days[0].checkIns).toHaveLength(4);
+    await harness.db.closeAsync();
+  });
+});
+
+
+describe('earliest check-in date', () => {
+  it('returns the oldest live logical date and null when empty', async () => {
+    const harness = await createTestHarness();
+    const boardId = await createBoardForTest(harness);
+    const empty = await getEarliestCheckInDate(harness.deps, boardId);
+    expect(empty.ok && empty.value).toBeNull();
+
+    for (const day of ['2026-08-28', '2026-08-26', '2026-08-29']) {
+      const created = await createCheckIn(harness.deps, {
+        commandId: harness.ids.nextCommandId(),
+        boardId,
+        logicalDate: day as LogicalDate,
+        source: 'app',
+      });
+      if (!created.ok) {
+        throw new Error(created.error.message);
+      }
+    }
+    const earliest = await getEarliestCheckInDate(harness.deps, boardId);
+    expect(earliest.ok && earliest.value).toBe('2026-08-26');
     await harness.db.closeAsync();
   });
 });

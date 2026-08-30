@@ -138,6 +138,19 @@ export async function listBoardCheckInsForDate(
   return rows.map(toCheckIn);
 }
 
+// the oldest logical date with a live record, bounding year selectors
+export async function earliestCheckInDate(
+  tx: SqlExecutor,
+  boardId: BoardId,
+): Promise<string | null> {
+  const row = await tx.getFirstAsync<{ earliest: string | null }>(
+    `SELECT MIN(logical_date) AS earliest FROM check_ins
+     WHERE board_id = ? AND deleted_at IS NULL`,
+    [boardId],
+  );
+  return row?.earliest ?? null;
+}
+
 // true per-month totals independent of any page limit
 export async function monthlyCheckInTotals(
   tx: SqlExecutor,

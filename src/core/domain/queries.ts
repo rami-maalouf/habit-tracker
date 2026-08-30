@@ -31,6 +31,7 @@ import {
   countBoardCheckIns,
   countBoardNotes,
   dailyCounts,
+  earliestCheckInDate,
   getCheckInById,
   latestCheckInForDate,
   listBoardCheckIns,
@@ -325,6 +326,16 @@ export function getGroupedCheckInHistory(
       hasMore = checkIns.length < totalRows;
     }
     return { months, hasMore };
+  });
+}
+
+export function getEarliestCheckInDate(
+  deps: QueryDeps,
+  boardId: BoardId,
+): Promise<DomainResult<LogicalDate | null>> {
+  return runQuery(deps, async (tx) => {
+    const earliest = await earliestCheckInDate(tx, boardId);
+    return earliest as LogicalDate | null;
   });
 }
 
