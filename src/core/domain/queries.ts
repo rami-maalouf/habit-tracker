@@ -257,11 +257,17 @@ export type HistoryMonthGroup = {
   days: HistoryDayGroup[];
 };
 
+export type GroupedCheckInHistory = {
+  months: HistoryMonthGroup[];
+  // true whenever records older than the loaded page remain
+  hasMore: boolean;
+};
+
 export function getGroupedCheckInHistory(
   deps: QueryDeps,
   boardId: BoardId,
   options: { limit?: number } = {},
-): Promise<DomainResult<HistoryMonthGroup[]>> {
+): Promise<DomainResult<GroupedCheckInHistory>> {
   return runQuery(deps, async (tx) => {
     // one extra row detects an overflowing page; the trailing partial day
     // is trimmed so day counts stay exact, unless it is the only day
@@ -304,6 +310,7 @@ export function getGroupedCheckInHistory(
       dayGroup.count += 1;
       dayGroup.checkIns.push(checkIn);
     }
+    let hasMore = false;
     if (monthTotals) {
       // month headers always show the true total, not the loaded slice;
       // every loaded month exists in the totals because both read the same
@@ -311,8 +318,13 @@ export function getGroupedCheckInHistory(
       for (const monthGroup of months) {
         monthGroup.count = monthTotals.get(monthGroup.month) as number;
       }
+      let totalRows = 0;
+      for (const total of monthTotals.values()) {
+        totalRows += total;
+      }
+      hasMore = checkIns.length < totalRows;
     }
-    return months;
+    return { months, hasMore };
   });
 }
 

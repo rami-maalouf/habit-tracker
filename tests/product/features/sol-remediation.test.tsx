@@ -5,6 +5,7 @@ import { act } from '@testing-library/react-native';
 import { archiveBoard, createBoard, createCheckIn } from '@/core/domain/commands';
 import type { BoardId, LogicalDate } from '@/core/domain/ids';
 import { getGroupedCheckInHistory, getWidgetProjection, listActiveBoards } from '@/core/domain/queries';
+import * as queriesModule from '@/core/domain/queries';
 
 import {
   getProductCore,
@@ -124,7 +125,7 @@ describe('check-in time recombination', () => {
     if (!history.ok) {
       throw new Error('history query failed');
     }
-    const record = history.value[0].days[0].checkIns[0];
+    const record = history.value.months[0].days[0].checkIns[0];
     expect(record.logicalDate).toBe('2026-08-28');
     expect(record.occurredAtUtc).not.toBeNull();
     // the stored instant is noon on the 28th in the device zone, never
@@ -160,7 +161,7 @@ describe('check-in time recombination', () => {
     if (!history.ok) {
       throw new Error('history query failed');
     }
-    const record = history.value[0].days[0].checkIns[0];
+    const record = history.value.months[0].days[0].checkIns[0];
     expect(record.logicalDate).toBe('2026-08-27');
     const stored = new Date(record.occurredAtUtc as number);
     expect(stored.getDate()).toBe(27);
@@ -178,7 +179,7 @@ describe('check-in time recombination', () => {
     if (!reread.ok) {
       throw new Error('history query failed');
     }
-    const saved = new Date(reread.value[0].days[0].checkIns[0].occurredAtUtc as number);
+    const saved = new Date(reread.value.months[0].days[0].checkIns[0].occurredAtUtc as number);
     expect(saved.getDate()).toBe(27);
     expect(saved.getHours()).toBe(18);
     expect(saved.getMinutes()).toBe(45);
@@ -223,8 +224,8 @@ describe('quick check-in domain effects', () => {
     if (!afterCheckIn.ok) {
       throw new Error('history query failed');
     }
-    expect(afterCheckIn.value).toHaveLength(1);
-    expect(afterCheckIn.value[0].count).toBe(1);
+    expect(afterCheckIn.value.months).toHaveLength(1);
+    expect(afterCheckIn.value.months[0].count).toBe(1);
 
     const projection = await getWidgetProjection(deps);
     if (!projection.ok) {
@@ -246,7 +247,7 @@ describe('quick check-in domain effects', () => {
     if (!afterUndo.ok) {
       throw new Error('history query failed');
     }
-    expect(afterUndo.value).toHaveLength(0);
+    expect(afterUndo.value.months).toHaveLength(0);
   });
 });
 
@@ -417,7 +418,7 @@ describe('round two: session isolation and read-only surfaces', () => {
     if (!history.ok) {
       throw new Error('history query failed');
     }
-    const stored = history.value[0].days[0].checkIns[0].occurredAtUtc;
+    const stored = history.value.months[0].days[0].checkIns[0].occurredAtUtc;
     // the picker's exact instant is stored verbatim, not the recombined
     // first occurrence of the ambiguous wall clock
     expect(stored).toBe(picked.getTime());
@@ -533,7 +534,7 @@ describe('self-review fixes', () => {
     if (!history.ok) {
       throw new Error('history query failed');
     }
-    const current = history.value[0].days[0].checkIns[0];
+    const current = history.value.months[0].days[0].checkIns[0];
     const concurrent = await updateCheckIn(deps, {
       commandId: newCommandId(),
       checkInId: current.id,
@@ -556,7 +557,7 @@ describe('self-review fixes', () => {
     if (!after.ok) {
       throw new Error('history query failed');
     }
-    expect(after.value[0].days[0].checkIns[0].note).toBe('my second edit');
+    expect(after.value.months[0].days[0].checkIns[0].note).toBe('my second edit');
   });
 });
 
@@ -566,11 +567,12 @@ describe('history paging', () => {
     alertSpy.mockClear();
   });
 
-  it('grows the page at the list end and stops once everything is loaded', async () => {
+  it('keeps paging through a trimmed boundary day and stops when exhausted', async () => {
     const boardId = await seedBoard('prolific');
     const deps = await core();
-    // 200 records fill the first page exactly; one older record sits beyond
-    for (let index = 0; index < 200; index += 1) {
+    // the 200-row page boundary falls inside the older day, so the first
+    // page trims it and loads fewer rows than the limit while more remain
+    for (let index = 0; index < 150; index += 1) {
       const created = await createCheckIn(deps, {
         commandId: newCommandId(),
         boardId,
@@ -581,14 +583,19 @@ describe('history paging', () => {
         throw new Error(created.error.message);
       }
     }
-    const older = await createCheckIn(deps, {
-      commandId: newCommandId(),
-      boardId,
-      logicalDate: '2026-08-28' as LogicalDate,
-      source: 'app',
-    });
-    expect(older.ok).toBe(true);
+    for (let index = 0; index < 100; index += 1) {
+      const created = await createCheckIn(deps, {
+        commandId: newCommandId(),
+        boardId,
+        logicalDate: '2026-08-28' as LogicalDate,
+        source: 'app',
+      });
+      if (!created.ok) {
+        throw new Error(created.error.message);
+      }
+    }
 
+    const querySpy = jest.spyOn(queriesModule, 'getGroupedCheckInHistory');
     renderRouter('src/app', { initialUrl: `/boards/${boardId}/check-ins` });
     await screen.findByText('Aug 29');
     // list virtualization keeps far rows unmounted, so paging is asserted
@@ -600,15 +607,19 @@ describe('history paging', () => {
       );
     expect(sectionsOf()).toEqual(['Aug 29']);
 
-    // reaching the end grows the page and loads the older day
+    // the trimmed page loaded under the limit, but older rows remain, so
+    // the end-reach still grows the page
     fireEvent(screen.getByTestId('history-list'), 'endReached');
     await settle();
     expect(sectionsOf()).toEqual(['Aug 29', 'Aug 28']);
 
-    // a further end-reach with everything loaded is a no-op
+    // with everything loaded, a further end-reach issues no new query
+    const callsWhenExhausted = querySpy.mock.calls.length;
     fireEvent(screen.getByTestId('history-list'), 'endReached');
     await settle();
     expect(sectionsOf()).toEqual(['Aug 29', 'Aug 28']);
+    expect(querySpy.mock.calls.length).toBe(callsWhenExhausted);
+    querySpy.mockRestore();
   });
 });
 
@@ -673,7 +684,7 @@ describe('round four: archived transitions and shifted days', () => {
     if (!history.ok) {
       throw new Error('history query failed');
     }
-    const record = history.value[0].days[0].checkIns[0];
+    const record = history.value.months[0].days[0].checkIns[0];
     expect(record.logicalDate).toBe('2026-11-02');
     // the occurrence stays at the real 00:30 instant on november 3; it is
     // never rewritten to 00:30 of the previous calendar day
@@ -716,7 +727,7 @@ describe('round four: archived transitions and shifted days', () => {
     if (!history.ok) {
       throw new Error('history query failed');
     }
-    const record = history.value[0].days[0].checkIns[0];
+    const record = history.value.months[0].days[0].checkIns[0];
     expect(record.logicalDate).toBe('2026-11-01');
     expect(record.occurredAtUtc).toBe(new Date(2026, 10, 2, 0, 30).getTime());
   });
@@ -764,7 +775,7 @@ describe('round five: dst gaps and zone-stable edits', () => {
     if (!history.ok) {
       throw new Error('history query failed');
     }
-    const record = history.value[0].days[0].checkIns[0];
+    const record = history.value.months[0].days[0].checkIns[0];
     expect(record.logicalDate).toBe('2026-03-07');
     const gapHost = new Date(2026, 2, 8, 2, 30).getHours() !== 2;
     const expected = gapHost
@@ -793,7 +804,7 @@ describe('round five: dst gaps and zone-stable edits', () => {
     if (!before.ok) {
       throw new Error('history query failed');
     }
-    const seeded = before.value[0].days[0].checkIns[0];
+    const seeded = before.value.months[0].days[0].checkIns[0];
 
     // the device moves to a far zone; a note-only edit must not resubmit
     // or rewrite the occurrence instant, zone, or offset
@@ -810,7 +821,7 @@ describe('round five: dst gaps and zone-stable edits', () => {
     if (!after.ok) {
       throw new Error('history query failed');
     }
-    const record = after.value[0].days[0].checkIns[0];
+    const record = after.value.months[0].days[0].checkIns[0];
     expect(record.note).toBe('same moment, new zone');
     expect(record.occurredAtUtc).toBe(seeded.occurredAtUtc);
     expect(record.timeZoneId).toBe(seeded.timeZoneId);

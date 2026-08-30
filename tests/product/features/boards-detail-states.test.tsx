@@ -252,7 +252,7 @@ describe('detail quick undo', () => {
     if (!history.ok) {
       throw new Error('history query failed');
     }
-    expect(history.value).toHaveLength(0);
+    expect(history.value.months).toHaveLength(0);
   });
 
   it('expires the detail undo window after five seconds', async () => {

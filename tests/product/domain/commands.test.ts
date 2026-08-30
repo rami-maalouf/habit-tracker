@@ -205,7 +205,7 @@ describe('board commands', () => {
     const widgets = await getWidgetProjection(harness.deps);
     expect(widgets.ok && widgets.value).toHaveLength(0);
     const history = await getGroupedCheckInHistory(harness.deps, boardId);
-    expect(history.ok && history.value).toHaveLength(0);
+    expect(history.ok && history.value.months).toHaveLength(0);
     await harness.db.closeAsync();
   });
 });
@@ -272,7 +272,7 @@ describe('check-in commands', () => {
     });
     expect(defaulted.ok).toBe(true);
     const history = await getGroupedCheckInHistory(harness.deps, amountBoard);
-    expect(history.ok && history.value[0].days[0].checkIns[0].amount).toBe(2.5);
+    expect(history.ok && history.value.months[0].days[0].checkIns[0].amount).toBe(2.5);
     const invalid = await createCheckIn(harness.deps, {
       commandId: harness.ids.nextCommandId(),
       boardId: amountBoard,
@@ -299,8 +299,8 @@ describe('check-in commands', () => {
     });
     const timedHistory = await getGroupedCheckInHistory(harness.deps, timed);
     const untimedHistory = await getGroupedCheckInHistory(harness.deps, untimed);
-    const timedRow = timedHistory.ok ? timedHistory.value[0].days[0].checkIns[0] : null;
-    const untimedRow = untimedHistory.ok ? untimedHistory.value[0].days[0].checkIns[0] : null;
+    const timedRow = timedHistory.ok ? timedHistory.value.months[0].days[0].checkIns[0] : null;
+    const untimedRow = untimedHistory.ok ? untimedHistory.value.months[0].days[0].checkIns[0] : null;
     expect(timedRow?.occurredAtUtc).toBe(harness.clock.utcMs);
     expect(timedRow?.timeZoneId).toBe('America/New_York');
     expect(timedRow?.offsetMinutes).toBe(-240);
@@ -328,7 +328,7 @@ describe('check-in commands', () => {
     });
     expect(historical.ok).toBe(true);
     const history = await getGroupedCheckInHistory(harness.deps, boardId);
-    const row = history.ok ? history.value[0].days[0].checkIns[0] : null;
+    const row = history.ok ? history.value.months[0].days[0].checkIns[0] : null;
     expect(row?.note).toBe('felt good');
     await harness.db.closeAsync();
   });
@@ -345,7 +345,7 @@ describe('check-in commands', () => {
       throw new Error('create failed');
     }
     const history = await getGroupedCheckInHistory(harness.deps, boardId);
-    const original = history.ok ? history.value[0].days[0].checkIns[0] : null;
+    const original = history.ok ? history.value.months[0].days[0].checkIns[0] : null;
     if (!original) {
       throw new Error('missing row');
     }
@@ -366,7 +366,7 @@ describe('check-in commands', () => {
     });
     expect(updated.ok).toBe(true);
     const after = await getGroupedCheckInHistory(harness.deps, boardId);
-    const edited = after.ok ? after.value[0].days[0].checkIns[0] : null;
+    const edited = after.ok ? after.value.months[0].days[0].checkIns[0] : null;
     expect(edited?.id).toBe(original.id);
     expect(edited?.source).toBe(original.source);
     expect(edited?.createdAt).toBe(original.createdAt);

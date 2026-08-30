@@ -92,19 +92,12 @@ export function CheckInHistoryScreen({ boardId }: { boardId: BoardId }) {
   const colors = record ? deriveBoardColors(record.accentHex, scheme) : null;
   const archived = record?.archivedAt !== null && record !== null;
 
-  // loaded row count gates page growth: once a page comes back smaller
-  // than its limit, everything is loaded and end-reached becomes a no-op
-  const loadedRows =
-    history.status === 'ready'
-      ? history.value.reduce(
-          (total, month) =>
-            total + month.days.reduce((dayTotal, day) => dayTotal + day.checkIns.length, 0),
-          0,
-        )
-      : 0;
+  // the query reports whether older records remain; end-reached becomes a
+  // no-op once everything is loaded
+  const hasMore = history.status === 'ready' && history.value.hasMore;
   const sections: DaySection[] =
     history.status === 'ready'
-      ? history.value.flatMap((month) =>
+      ? history.value.months.flatMap((month) =>
           month.days.map((day, dayIndex) => ({
             title: dayTitle(day.date),
             monthHeader: dayIndex === 0 ? monthTitle(month.month, currentYear) : null,
@@ -161,7 +154,7 @@ export function CheckInHistoryScreen({ boardId }: { boardId: BoardId }) {
           sections={sections}
           keyExtractor={(item) => item.id}
           onEndReached={() => {
-            if (loadedRows >= pageLimit) {
+            if (hasMore) {
               setPageLimit((current) => current + 200);
             }
           }}

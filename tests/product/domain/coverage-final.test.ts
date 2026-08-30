@@ -441,12 +441,13 @@ describe('paged check-in history', () => {
     if (!paged.ok) {
       throw new Error(paged.error.message);
     }
-    expect(paged.value).toHaveLength(1);
-    expect(paged.value[0].days).toHaveLength(1);
-    expect(paged.value[0].days[0].date).toBe('2026-09-03');
-    expect(paged.value[0].days[0].count).toBe(3);
+    expect(paged.value.months).toHaveLength(1);
+    expect(paged.value.months[0].days).toHaveLength(1);
+    expect(paged.value.months[0].days[0].date).toBe('2026-09-03');
+    expect(paged.value.months[0].days[0].count).toBe(3);
     // the month header still reports all nine records
-    expect(paged.value[0].count).toBe(9);
+    expect(paged.value.months[0].count).toBe(9);
+    expect(paged.value.hasMore).toBe(true);
 
     // a limit inside the FIRST day completes that day instead of returning
     // an empty or undercounted page
@@ -454,25 +455,26 @@ describe('paged check-in history', () => {
     if (!tiny.ok) {
       throw new Error(tiny.error.message);
     }
-    expect(tiny.value[0].days[0].date).toBe('2026-09-03');
-    expect(tiny.value[0].days[0].checkIns).toHaveLength(3);
-    expect(tiny.value[0].days[0].count).toBe(3);
+    expect(tiny.value.months[0].days[0].date).toBe('2026-09-03');
+    expect(tiny.value.months[0].days[0].checkIns).toHaveLength(3);
+    expect(tiny.value.months[0].days[0].count).toBe(3);
 
     // a limit at or beyond the total behaves like the unpaged query
     const all = await getGroupedCheckInHistory(harness.deps, boardId, { limit: 50 });
     if (!all.ok) {
       throw new Error(all.error.message);
     }
-    expect(all.value[0].days).toHaveLength(3);
+    expect(all.value.months[0].days).toHaveLength(3);
+    expect(all.value.hasMore).toBe(false);
 
     // a limit landing exactly on a day boundary keeps that complete day
     const exact = await getGroupedCheckInHistory(harness.deps, boardId, { limit: 3 });
     if (!exact.ok) {
       throw new Error(exact.error.message);
     }
-    expect(exact.value[0].days).toHaveLength(1);
-    expect(exact.value[0].days[0].date).toBe('2026-09-03');
-    expect(exact.value[0].days[0].count).toBe(3);
+    expect(exact.value.months[0].days).toHaveLength(1);
+    expect(exact.value.months[0].days[0].date).toBe('2026-09-03');
+    expect(exact.value.months[0].days[0].count).toBe(3);
 
     // a single day larger than the page is completed, never undercounted
     for (let index = 0; index < 4; index += 1) {
@@ -490,10 +492,10 @@ describe('paged check-in history', () => {
     if (!bigDay.ok) {
       throw new Error(bigDay.error.message);
     }
-    expect(bigDay.value[0].days).toHaveLength(1);
-    expect(bigDay.value[0].days[0].date).toBe('2026-09-04');
-    expect(bigDay.value[0].days[0].count).toBe(4);
-    expect(bigDay.value[0].days[0].checkIns).toHaveLength(4);
+    expect(bigDay.value.months[0].days).toHaveLength(1);
+    expect(bigDay.value.months[0].days[0].date).toBe('2026-09-04');
+    expect(bigDay.value.months[0].days[0].count).toBe(4);
+    expect(bigDay.value.months[0].days[0].checkIns).toHaveLength(4);
     await harness.db.closeAsync();
   });
 });

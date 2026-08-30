@@ -320,9 +320,9 @@ describe('history, journal, and heatmap composition', () => {
     if (!history.ok) {
       throw new Error('history failed');
     }
-    expect(history.value.map((month) => month.month)).toEqual(['2026-08', '2026-07']);
-    expect(history.value[0].count).toBe(2);
-    const todayGroup = history.value[0].days[0];
+    expect(history.value.months.map((month) => month.month)).toEqual(['2026-08', '2026-07']);
+    expect(history.value.months[0].count).toBe(2);
+    const todayGroup = history.value.months[0].days[0];
     expect(todayGroup.count).toBe(2);
     // newest instant first within the day
     expect(todayGroup.checkIns[0].occurredAtUtc).toBeGreaterThan(
