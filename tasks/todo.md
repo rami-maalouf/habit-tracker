@@ -37,10 +37,10 @@ Every task ends with: full validation suite, independent GPT-5.6 Sol pass, Argen
 
 ## T4 - semantic theme tokens
 
-- [ ] red: token completeness and invariant tests (semantic colors with web-safe fallbacks, brand accent boundary, 4-pt spacing, Dynamic Type ramp, continuous radii, boxShadow only, motion plus reduced-motion policy)
-- [ ] implement `src/theme/{colors,spacing,typography,radius,shadows,motion,index}.ts`
-- [ ] only `@/theme` is imported by non-theme code; no legacy shadow or elevation props
-- [ ] gates: Sol pass, Argent smoke, commit `feat: add semantic theme tokens`, push
+- [x] red: token completeness and invariant tests (semantic colors with web-safe fallbacks, brand accent boundary, 4-pt spacing, Dynamic Type ramp, continuous radii, boxShadow only, motion plus reduced-motion policy, 4.5:1 contrast pairs)
+- [x] implement `src/theme/{colors,spacing,typography,radius,shadows,motion,index}.ts`
+- [x] only `@/theme` is imported by non-theme code (eslint no-restricted-imports guard); no legacy shadow props
+- [x] gates: Sol pass (after cosmetic remediation), Argent smoke, commit `feat: add semantic theme tokens`, push
 
 ## T5 - foundation components
 

@@ -70,4 +70,15 @@ Evidence images live under `.artifacts/` or system temp paths and stay out of Gi
    - runtime-log result: `debugger-log-registry` connected, 0 entries.
    - final screenshot captured after recovery.
 7. Deviations from the reference: none. Notable in-spec decisions: `+not-found` recovery uses `replace` so the unmatched route does not stay on the stack; Jest asserts the stack title and inset behavior through props because the native header and scroll insets render natively, with the on-device result covered by the Argent evidence above. The recovery test presses the link and asserts the pathname returns to `/`.
+8. Commit and push: `04e3d99`, pushed to `origin/main`.
+
+## T4 - semantic theme tokens
+
+1. Task id: T4. Acceptance: one theme entry point at `src/theme/index.ts`; semantic colors with web-safe fallbacks; brand accent boundary; 4-point spacing; Dynamic Type ramp on the system font; continuous radius tokens; boxShadow-only shadows; motion tokens with reduced-motion policy; token invariants tested.
+2. Author: Fable 5. Delegated agents: none (drafting delegation was considered and not needed).
+3. Files changed: `src/theme/{colors,spacing,typography,radius,shadows,motion,index}.ts` (new), `tests/native-foundation/theme.test.ts` (new), `eslint.config.js` (no-restricted-imports guard so non-theme code imports `@/theme` only).
+4. Tests and static checks: TDD red recorded (unresolved `@/theme`), then green. 16/16 tests, 100 percent coverage on all four metrics, lint and typecheck pass. Contrast invariants asserted in tests: label on background and grouped background, onAccent on accent, and onDestructive on destructive all meet 4.5:1 in both schemes.
+5. GPT-5.6 Sol review: fail on first pass (shared hex literals not hoisted; ban-word grep matched comments). Both were prompt-literal findings, remediated cosmetically; pass on re-review.
+6. Argent evidence (target `93EEF062-B4DC-4989-AF77-CF47EE2A9816`), tests type: app relaunched, root route visible (`Native foundation ready` await succeeded in 96 ms), `debugger-log-registry` connected with 0 entries.
+7. Deviations from the reference: none. Notable in-spec decisions: destructive light fallback uses `#d70015` (system red accessible variant) so onDestructive white meets 4.5:1; brand accent pair (`#2563eb` light, `#7cb3ff` dark) chosen to pass 4.5:1 against its on-accent colors.
 8. Commit and push: recorded after gates pass.
