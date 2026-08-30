@@ -17,14 +17,14 @@ Every task ends with: full validation suite, independent GPT-5.6 Sol pass, Argen
 
 ## T2 - dependencies, test harness, repository hygiene
 
-- [ ] `bunx expo install @expo/ui expo-blur expo-glass-effect expo-haptics expo-image expo-dev-client`
-- [ ] `bunx expo install jest-expo jest @testing-library/react-native @types/jest --dev`
-- [ ] add scripts: `lint`, `typecheck`, `test`, `test:coverage`, `validate`
-- [ ] `jest.config.js`: jest-expo preset, Bun transform ignore pattern, 90 percent global thresholds, minimal reviewed exclusions
-- [ ] `.gitignore`: add `.artifacts/` and `dist-validation/`
-- [ ] `src/testing/render.tsx` helper plus first harness test
-- [ ] `bun run lint`, `bun run typecheck`, `bun run test`, `bunx expo-doctor` pass
-- [ ] gates: Sol pass, Argent smoke (relaunch, describe, logs), commit `chore: add foundation dependencies and jest harness`, push
+- [x] `bunx expo install @expo/ui expo-blur expo-glass-effect expo-haptics expo-image expo-dev-client`
+- [x] `bunx expo install jest-expo jest @testing-library/react-native @types/jest --dev` (RNTL pinned to v13 line, human approved)
+- [x] add scripts: `lint`, `typecheck`, `test`, `test:coverage`, `validate`
+- [x] `jest.config.js`: jest-expo preset, Bun transform ignore pattern, 90 percent global thresholds, minimal reviewed exclusions
+- [x] `.gitignore`: add `.artifacts/` and `dist-validation/`
+- [x] `src/testing/render.tsx` helper plus first harness test (plus matcher type shim)
+- [x] `bun run validate`, `bunx expo-doctor` 21/21, `git diff --check` pass; dev client built and installed (moved up from T7)
+- [x] gates: Sol pass (after remediation), Argent smoke (launch, describe, clean log registry), commit `chore: add foundation dependencies and jest harness`, push
 
 ## T3 - route migration to src/app and starter removal
 

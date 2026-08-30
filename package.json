@@ -3,9 +3,15 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "dependencies": {
+    "@expo/ui": "~57.0.14",
     "expo": "~57.0.18",
+    "expo-blur": "~57.0.2",
     "expo-constants": "~57.0.16",
+    "expo-dev-client": "~57.0.16",
     "expo-font": "~57.0.2",
+    "expo-glass-effect": "~57.0.1",
+    "expo-haptics": "~57.0.2",
+    "expo-image": "~57.0.3",
     "expo-linking": "~57.0.8",
     "expo-router": "~57.0.17",
     "expo-splash-screen": "~57.0.8",
@@ -23,15 +29,27 @@
     "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
+    "@testing-library/react-native": "^13",
+    "@types/jest": "29.5.14",
     "@types/react": "~19.2.2",
+    "ajv": "^6.14.0",
+    "eslint": "^9",
+    "eslint-config-expo": "~57.0.2",
     "expo-mcp": "~0.2.1",
+    "jest": "~29.7.0",
+    "jest-expo": "~57.0.5",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "EXPO_UNSTABLE_MCP_SERVER=1 bun expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "lint": "expo lint",
+    "typecheck": "tsc --noEmit",
+    "test": "jest --runInBand",
+    "test:coverage": "jest --runInBand --coverage",
+    "validate": "bun run lint && bun run typecheck && bun run test:coverage"
   },
   "private": true
 }

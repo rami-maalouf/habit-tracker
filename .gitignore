@@ -40,3 +40,10 @@ yarn-error.*
 /ios
 /android
 design/ripples-screenshots/
+
+# private validation evidence and export bundles
+.artifacts/
+dist-validation/
+
+# test output
+coverage/
