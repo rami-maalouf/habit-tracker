@@ -116,6 +116,10 @@ export function BoardsHomeScreen() {
       });
       if (result.ok) {
         invalidate();
+      } else {
+        // a neighbor may have vanished concurrently; say so instead of a
+        // silently dead control
+        setQuickError(result.error.message);
       }
     },
     [core, invalidate, nextCommandId],
