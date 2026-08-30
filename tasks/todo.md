@@ -51,12 +51,12 @@ Every task ends with: full validation suite, independent GPT-5.6 Sol pass, Argen
 
 ## T6 - foundation preview route
 
-- [ ] red: tests for seven ordered sections, labeled fixtures, `Action count` behavior, `material=fallback` param, production redirect to `/`
-- [ ] `src/app/(dev)/foundation-preview.tsx` (guard plus composition only); fixtures and sections in `src/foundation/validation/`; haptic policy module
-- [ ] `@expo/ui` Host controls: `Primary action`, `Habit enabled`, `Intensity`, `Frequency`, `Note`
-- [ ] `e2e/argent/native-foundation/` flow definitions
-- [ ] coverage still at or above 90 percent on all four metrics
-- [ ] gates: Sol pass, Argent interactive evidence (deep link, activate, `Action count: 1`, screenshot), commit `feat: add development foundation preview route`, push
+- [x] red: tests for seven ordered sections, labeled fixtures, `Action count` behavior, `material=fallback` param, production redirect to `/`
+- [x] `src/app/(dev)/foundation-preview.tsx` (guard plus composition only); fixtures and sections in `src/foundation/validation/`; haptic policy module; reduced-motion hook
+- [x] `@expo/ui` Host controls: `Primary action`, `Habit enabled`, `Intensity`, `Frequency`, `Note` (plus disabled states and action counter)
+- [x] `e2e/argent/native-foundation/foundation-preview-flow.md` flow definitions
+- [x] coverage 97.1/93.1/93.0/100 - all four at or above 90
+- [x] gates: Sol pass (after three remediation rounds), Argent interactive evidence (deep link, describe, activate, `Action count: 1`, clean logs), commit `feat: add development foundation preview route`, push
 
 ## T7 - development client build and full device validation
 

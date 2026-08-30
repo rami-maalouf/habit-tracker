@@ -13,8 +13,14 @@ module.exports = {
     // through router tests; type declarations carry no executable code
     '!src/app/**',
     '!src/**/*.d.ts',
+    // reviewed exclusion: test infrastructure (render helper and mocks) is
+    // not product logic
+    '!src/testing/**',
   ],
   moduleNameMapper: {
+    // reviewed behavior-focused mock: jest-expo provides no @expo/ui mock and
+    // the real package requires the native ObservableState runtime
+    '^@expo/ui$': '<rootDir>/src/testing/expo-ui.mock.tsx',
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   coverageThreshold: {
