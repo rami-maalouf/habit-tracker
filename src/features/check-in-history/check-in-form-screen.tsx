@@ -80,7 +80,18 @@ function instantFor(
   if (currentLogicalDate(nextDay, timeZoneId, startOfDayMinute) === date) {
     return nextDay;
   }
-  return base;
+  // a spring-forward gap can invalidate both candidates; the next valid
+  // time inside the selected logical day is its start-of-day wall clock
+  // (date construction normalizes forward out of a gap, staying inside)
+  return new Date(
+    year,
+    month - 1,
+    day,
+    Math.floor(startOfDayMinute / 60),
+    startOfDayMinute % 60,
+    0,
+    0,
+  ).getTime();
 }
 
 export function CheckInFormScreen({ boardId, checkInId }: CheckInFormScreenProps) {
@@ -176,6 +187,10 @@ function CheckInFormBody({
     return timeOfDayFromInstant(core.clock.nowUtcMs(), deviceZone);
   });
   const [timeTouched, setTimeTouched] = useState(record !== null);
+  // a record edit resubmits its occurrence only when the user changed the
+  // date or time; otherwise the stored instant, zone, and offset survive a
+  // device zone change untouched
+  const [occurrenceEdited, setOccurrenceEdited] = useState(false);
   const [amountText, setAmountText] = useState(
     record
       ? record.amount === null
@@ -212,6 +227,7 @@ function CheckInFormBody({
       const next = logicalFromDate(value);
       setLogicalDate(next);
       setDirty(true);
+      setOccurrenceEdited(true);
       // an untouched time follows the date: now for today, noon for the past
       if (!timeTouched && board.tracksTime) {
         setTimeOfDay(
@@ -237,7 +253,7 @@ function CheckInFormBody({
         ? Number(amountText.replace(',', '.'))
         : undefined;
     const occurredAtUtc =
-      board.tracksTime && timeOfDay !== null
+      board.tracksTime && timeOfDay !== null && (record === null || occurrenceEdited)
         ? instantFor(logicalDate, timeOfDay, deviceZone, board.startOfDayMinute)
         : undefined;
     const result = record
@@ -381,6 +397,7 @@ function CheckInFormBody({
                     exactInstant: date.getTime(),
                   });
                   setTimeTouched(true);
+                  setOccurrenceEdited(true);
                   setDirty(true);
                 }}
                 testID="check-in-time"
