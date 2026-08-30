@@ -164,6 +164,17 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
   const educationDismissed =
     dismissed.status === 'ready' && dismissed.value.includes(record.id);
   const metricsReady = summary.status === 'ready' && summary.value !== null && summary.value.metricsReady;
+  // a failed supporting query surfaces with a retry instead of silently
+  // hiding a section or misrendering the education card
+  const supportError =
+    summary.status === 'error'
+      ? summary.error
+      : heatmap.status === 'error'
+        ? heatmap.error
+        : dismissed.status === 'error'
+          ? dismissed.error
+          : null;
+  const supportReady = summary.status === 'ready' && dismissed.status === 'ready';
 
   return (
     <View style={{ flex: 1, backgroundColor: semanticColor('groupedBackground', scheme) }}>
@@ -219,6 +230,17 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
           </View>
         ) : null}
 
+        {supportError ? (
+          <View style={{ gap: spacing.md }} testID="detail-query-error">
+            <InlineError message={supportError.message} />
+            <PrimaryButton
+              title="Try again"
+              onPress={invalidate}
+              testID="detail-query-retry"
+            />
+          </View>
+        ) : null}
+
         {heatmap.status === 'ready' && heatmap.value ? (
           <View
             style={{
@@ -232,7 +254,7 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
           </View>
         ) : null}
 
-        {record.metricsEnabled && !metricsReady && !educationDismissed && !archived ? (
+        {supportReady && record.metricsEnabled && !metricsReady && !educationDismissed && !archived ? (
           <View
             style={{
               backgroundColor: semanticColor('secondaryGroupedBackground', scheme),
