@@ -34,6 +34,7 @@ import {
   getCheckInById,
   latestCheckInForDate,
   listBoardCheckIns,
+  listBoardCheckInsForDate,
   listBoardJournal,
   monthlyCheckInTotals,
 } from '../persistence/repositories/check-ins';
@@ -272,8 +273,17 @@ export function getGroupedCheckInHistory(
     if (options.limit !== undefined && fetched.length > options.limit) {
       const bounded = fetched.slice(0, options.limit);
       const lastDate = bounded[bounded.length - 1].logicalDate;
-      const trimmed = bounded.filter((checkIn) => checkIn.logicalDate !== lastDate);
-      checkIns = trimmed.length > 0 ? trimmed : bounded;
+      if (fetched[options.limit].logicalDate !== lastDate) {
+        // the overflow row starts an older day: the page ends exactly on a
+        // complete day and nothing is trimmed
+        checkIns = bounded;
+      } else {
+        const trimmed = bounded.filter((checkIn) => checkIn.logicalDate !== lastDate);
+        // a day larger than the whole page is completed instead of trimmed
+        // so its count stays exact
+        checkIns =
+          trimmed.length > 0 ? trimmed : await listBoardCheckInsForDate(tx, boardId, lastDate);
+      }
     }
     const monthTotals =
       options.limit === undefined ? null : await monthlyCheckInTotals(tx, boardId);

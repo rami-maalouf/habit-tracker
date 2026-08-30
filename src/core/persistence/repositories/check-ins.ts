@@ -124,6 +124,20 @@ export async function listBoardCheckIns(
   return rows.map(toCheckIn);
 }
 
+// every record of one logical day, for completing a page boundary
+export async function listBoardCheckInsForDate(
+  tx: SqlExecutor,
+  boardId: BoardId,
+  logicalDate: string,
+): Promise<CheckIn[]> {
+  const rows = await tx.getAllAsync<CheckInRow>(
+    `SELECT ${CHECK_IN_COLUMNS} FROM check_ins
+     WHERE board_id = ? AND deleted_at IS NULL AND logical_date = ? ${HISTORY_ORDER}`,
+    [boardId, logicalDate],
+  );
+  return rows.map(toCheckIn);
+}
+
 // true per-month totals independent of any page limit
 export async function monthlyCheckInTotals(
   tx: SqlExecutor,
