@@ -104,7 +104,7 @@ Evidence images live under `.artifacts/` or system temp paths and stay out of Gi
 5. GPT-5.6 Sol review: fail on first pass (closure bookkeeping: missing T6/T7 hashes, unchecked todo items, self-hash paradox). All records remediated; pass on re-review, with the two-commit closure protocol confirmed sound.
 6. Argent evidence (target `93EEF062-B4DC-4989-AF77-CF47EE2A9816`), tests type: rebuilt client launched, root route described (`Ripples`, `Native foundation ready`), `debugger-log-registry` connected with 0 entries.
 7. Deviations from the reference: none.
-8. Commit and push: closure commit `chore: close native-foundation module validation`; its hash is recorded in this field by the immediate follow-up commit `docs: record closure commit hash`, and both are pushed together.
+8. Commit and push: closure commit `9f54e9d` (`chore: close native-foundation module validation`), recorded here by the follow-up docs commit; both pushed together to `origin/main`.
 
 ### Success criteria closure (all 22 true)
 
