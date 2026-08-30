@@ -26,22 +26,38 @@ let corePromise: Promise<DomainResult<ProductCore>> | null = null;
 
 async function open(): Promise<DomainResult<ProductCore>> {
   const db: SqlDatabase = await openProductSqlDatabase();
-  const initialized = await initializeProductDatabase(db, deviceIds);
-  if (!initialized.ok) {
-    // a failed migration never creates a replacement database
-    return initialized;
+  try {
+    const initialized = await initializeProductDatabase(db, deviceIds);
+    if (!initialized.ok) {
+      // a failed migration never creates a replacement database, and the
+      // opened connections must not leak across retries
+      await db.closeAsync().catch(() => undefined);
+      return initialized;
+    }
+    return ok({ db, clock: deviceClock, ids: deviceIds });
+  } catch (cause) {
+    await db.closeAsync().catch(() => undefined);
+    throw cause;
   }
-  return ok({ db, clock: deviceClock, ids: deviceIds });
 }
 
-// one shared product core per process; a migration failure is remembered so
-// the recovery surface stays visible instead of retrying into a broken store
+// one shared product core per process; only a successful open is cached so
+// the recovery surface's retry re-attempts a failed open instead of
+// replaying the remembered failure (the database itself is never replaced)
 export function getProductCore(): Promise<DomainResult<ProductCore>> {
   if (corePromise === null) {
-    corePromise = open().catch((cause) => {
-      corePromise = null;
-      throw cause;
-    });
+    corePromise = open().then(
+      (result) => {
+        if (!result.ok) {
+          corePromise = null;
+        }
+        return result;
+      },
+      (cause) => {
+        corePromise = null;
+        throw cause;
+      },
+    );
   }
   return corePromise;
 }

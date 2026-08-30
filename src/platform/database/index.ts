@@ -38,8 +38,11 @@ export async function openProductSqlDatabase(): Promise<SqlDatabase> {
   await writeDb.execAsync('PRAGMA foreign_keys = ON');
   await readDb.execAsync('PRAGMA foreign_keys = ON');
 
-  // serializes exclusive transactions on the write connection
+  // serializes exclusive transactions on the write connection and read
+  // transactions on the primary connection (one BEGIN at a time per
+  // connection)
   let writeQueue: Promise<unknown> = Promise.resolve();
+  let readQueue: Promise<unknown> = Promise.resolve();
 
   const writeExecutor = {
     runAsync: async (sql: string, params: (string | number | null)[] = []) => {
@@ -78,18 +81,23 @@ export async function openProductSqlDatabase(): Promise<SqlDatabase> {
       return chained;
     },
     withTransactionAsync: async (work) => {
-      let value: unknown;
-      await readDb.withTransactionAsync(async () => {
-        value = await work({
-          runAsync: async (sql, params = []) => {
-            const result = await readDb.runAsync(sql, params);
-            return { changes: result.changes };
-          },
-          getAllAsync: (sql, params = []) => readDb.getAllAsync(sql, params),
-          getFirstAsync: (sql, params = []) => readDb.getFirstAsync(sql, params),
+      const run = async () => {
+        let value: unknown;
+        await readDb.withTransactionAsync(async () => {
+          value = await work({
+            runAsync: async (sql, params = []) => {
+              const result = await readDb.runAsync(sql, params);
+              return { changes: result.changes };
+            },
+            getAllAsync: (sql, params = []) => readDb.getAllAsync(sql, params),
+            getFirstAsync: (sql, params = []) => readDb.getFirstAsync(sql, params),
+          });
         });
-      });
-      return value as never;
+        return value as never;
+      };
+      const chained = readQueue.then(run, run);
+      readQueue = chained.catch(() => undefined);
+      return chained;
     },
     closeAsync: async () => {
       await writeDb.closeAsync();
