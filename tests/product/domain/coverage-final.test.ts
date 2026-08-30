@@ -5,6 +5,7 @@ import {
   getBoardHeatmap,
   getBoardSummary,
   getConsistencyAnalytics,
+  getGroupedCheckInHistory,
   getSevenDayStrip,
 } from '@/core/domain/queries';
 import { initializeProductDatabase } from '@/core/persistence/bootstrap';
@@ -411,5 +412,57 @@ describe('final branch coverage', () => {
     });
     expect(!result.ok && result.error.message).toContain('settings exploded');
     await db.closeAsync();
+  });
+});
+
+
+describe('paged check-in history', () => {
+  it('trims the trailing partial day and keeps true month totals', async () => {
+    const harness = await createTestHarness();
+    const boardId = await createBoardForTest(harness);
+    harness.clock.advanceDays(6);
+    // three days, three check-ins each, newest first in history
+    for (const day of ['2026-09-01', '2026-09-02', '2026-09-03']) {
+      for (let index = 0; index < 3; index += 1) {
+        const created = await createCheckIn(harness.deps, {
+          commandId: harness.ids.nextCommandId(),
+          boardId,
+          logicalDate: day as LogicalDate,
+          source: 'app',
+        });
+        if (!created.ok) {
+          throw new Error(created.error.message);
+        }
+      }
+    }
+
+    // a limit inside the second day trims that partial day entirely
+    const paged = await getGroupedCheckInHistory(harness.deps, boardId, { limit: 4 });
+    if (!paged.ok) {
+      throw new Error(paged.error.message);
+    }
+    expect(paged.value).toHaveLength(1);
+    expect(paged.value[0].days).toHaveLength(1);
+    expect(paged.value[0].days[0].date).toBe('2026-09-03');
+    expect(paged.value[0].days[0].count).toBe(3);
+    // the month header still reports all nine records
+    expect(paged.value[0].count).toBe(9);
+
+    // a limit inside the FIRST day keeps the partial day rather than an
+    // empty page
+    const tiny = await getGroupedCheckInHistory(harness.deps, boardId, { limit: 2 });
+    if (!tiny.ok) {
+      throw new Error(tiny.error.message);
+    }
+    expect(tiny.value[0].days[0].date).toBe('2026-09-03');
+    expect(tiny.value[0].days[0].checkIns).toHaveLength(2);
+
+    // a limit at or beyond the total behaves like the unpaged query
+    const all = await getGroupedCheckInHistory(harness.deps, boardId, { limit: 50 });
+    if (!all.ok) {
+      throw new Error(all.error.message);
+    }
+    expect(all.value[0].days).toHaveLength(3);
+    await harness.db.closeAsync();
   });
 });

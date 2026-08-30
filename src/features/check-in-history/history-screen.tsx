@@ -1,4 +1,5 @@
 import { Stack, useRouter } from 'expo-router';
+import { useState } from 'react';
 import { SectionList, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
@@ -61,8 +62,14 @@ export function CheckInHistoryScreen({ boardId }: { boardId: BoardId }) {
   const router = useRouter();
   const scheme = useScheme();
   const { core } = useProduct();
+  // history loads in pages so very large boards stay responsive; the page
+  // grows as the reader approaches the end of the list
+  const [pageLimit, setPageLimit] = useState(200);
   const board = useProductQuery((c) => getBoard(c, boardId), [boardId]);
-  const history = useProductQuery((c) => getGroupedCheckInHistory(c, boardId), [boardId]);
+  const history = useProductQuery(
+    (c) => getGroupedCheckInHistory(c, boardId, { limit: pageLimit }),
+    [boardId, pageLimit],
+  );
   const currentYear = Number(
     new Intl.DateTimeFormat('en-US', {
       year: 'numeric',
@@ -142,6 +149,8 @@ export function CheckInHistoryScreen({ boardId }: { boardId: BoardId }) {
         <SectionList
           sections={sections}
           keyExtractor={(item) => item.id}
+          onEndReached={() => setPageLimit((current) => current + 200)}
+          onEndReachedThreshold={0.5}
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={{ padding: spacing.lg, gap: spacing.sm }}
           renderSectionHeader={({ section }) => (

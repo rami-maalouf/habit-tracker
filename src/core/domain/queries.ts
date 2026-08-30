@@ -35,6 +35,7 @@ import {
   latestCheckInForDate,
   listBoardCheckIns,
   listBoardJournal,
+  monthlyCheckInTotals,
 } from '../persistence/repositories/check-ins';
 import { getSettings, listBoardPeriods } from '../persistence/repositories/support';
 import type { Board, CheckIn, WidgetBoardRow } from './entities';
@@ -258,9 +259,24 @@ export type HistoryMonthGroup = {
 export function getGroupedCheckInHistory(
   deps: QueryDeps,
   boardId: BoardId,
+  options: { limit?: number } = {},
 ): Promise<DomainResult<HistoryMonthGroup[]>> {
   return runQuery(deps, async (tx) => {
-    const checkIns = await listBoardCheckIns(tx, boardId);
+    // one extra row detects an overflowing page; the trailing partial day
+    // is trimmed so day counts stay exact, unless it is the only day
+    const fetched =
+      options.limit === undefined
+        ? await listBoardCheckIns(tx, boardId)
+        : await listBoardCheckIns(tx, boardId, options.limit + 1);
+    let checkIns = fetched;
+    if (options.limit !== undefined && fetched.length > options.limit) {
+      const bounded = fetched.slice(0, options.limit);
+      const lastDate = bounded[bounded.length - 1].logicalDate;
+      const trimmed = bounded.filter((checkIn) => checkIn.logicalDate !== lastDate);
+      checkIns = trimmed.length > 0 ? trimmed : bounded;
+    }
+    const monthTotals =
+      options.limit === undefined ? null : await monthlyCheckInTotals(tx, boardId);
     const months: HistoryMonthGroup[] = [];
     for (const checkIn of checkIns) {
       const month = monthOf(checkIn.logicalDate);
@@ -277,6 +293,14 @@ export function getGroupedCheckInHistory(
       }
       dayGroup.count += 1;
       dayGroup.checkIns.push(checkIn);
+    }
+    if (monthTotals) {
+      // month headers always show the true total, not the loaded slice;
+      // every loaded month exists in the totals because both read the same
+      // rows inside one snapshot
+      for (const monthGroup of months) {
+        monthGroup.count = monthTotals.get(monthGroup.month) as number;
+      }
     }
     return months;
   });

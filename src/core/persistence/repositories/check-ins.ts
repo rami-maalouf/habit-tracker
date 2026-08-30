@@ -102,13 +102,40 @@ export async function getCheckInById(
   return row ? toCheckIn(row) : null;
 }
 
-export async function listBoardCheckIns(tx: SqlExecutor, boardId: BoardId): Promise<CheckIn[]> {
-  const rows = await tx.getAllAsync<CheckInRow>(
-    `SELECT ${CHECK_IN_COLUMNS} FROM check_ins
-     WHERE board_id = ? AND deleted_at IS NULL ${HISTORY_ORDER}`,
+export async function listBoardCheckIns(
+  tx: SqlExecutor,
+  boardId: BoardId,
+  limit?: number,
+): Promise<CheckIn[]> {
+  // a bounded page keeps history responsive at very large record counts;
+  // callers grow the limit as the reader scrolls
+  const rows =
+    limit === undefined
+      ? await tx.getAllAsync<CheckInRow>(
+          `SELECT ${CHECK_IN_COLUMNS} FROM check_ins
+           WHERE board_id = ? AND deleted_at IS NULL ${HISTORY_ORDER}`,
+          [boardId],
+        )
+      : await tx.getAllAsync<CheckInRow>(
+          `SELECT ${CHECK_IN_COLUMNS} FROM check_ins
+           WHERE board_id = ? AND deleted_at IS NULL ${HISTORY_ORDER} LIMIT ?`,
+          [boardId, limit],
+        );
+  return rows.map(toCheckIn);
+}
+
+// true per-month totals independent of any page limit
+export async function monthlyCheckInTotals(
+  tx: SqlExecutor,
+  boardId: BoardId,
+): Promise<Map<string, number>> {
+  const rows = await tx.getAllAsync<{ month: string; total: number }>(
+    `SELECT substr(logical_date, 1, 7) AS month, COUNT(*) AS total FROM check_ins
+     WHERE board_id = ? AND deleted_at IS NULL
+     GROUP BY substr(logical_date, 1, 7)`,
     [boardId],
   );
-  return rows.map(toCheckIn);
+  return new Map(rows.map((row) => [row.month, Number(row.total)]));
 }
 
 export async function listBoardJournal(tx: SqlExecutor, boardId: BoardId): Promise<CheckIn[]> {
