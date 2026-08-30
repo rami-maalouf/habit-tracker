@@ -242,17 +242,21 @@ describe('analytics sheet', () => {
     expect(screen.getByTestId('unit-columns')).toBeOnTheScreen();
   });
 
-  it('splits a cross-month streak span into month rows', () => {
+  it('splits a cross-month streak span into month rows ending at the window end', () => {
     const rows = buildStreakRows({
       spans: [{ startDate: '2026-08-30', endDate: '2026-09-02' }],
       windowStart: '2025-10-01',
       windowEnd: '2026-09-30',
     });
     expect(rows).toHaveLength(12);
+    // the final row is the window's last month, so the current month is
+    // always visible
+    expect(rows[11].monthLabel).toBe('Sep');
+    expect(rows[0].monthLabel).toBe('Oct');
     const august = rows.find((row) => row.monthLabel === 'Aug');
-    const september = rows.find((row) => row.monthLabel === 'Sep');
+    const september = rows[11];
     expect(august?.spans).toEqual([{ startDay: 30, endDay: 31 }]);
-    expect(september?.spans).toEqual([{ startDay: 1, endDay: 2 }]);
+    expect(september.spans).toEqual([{ startDay: 1, endDay: 2 }]);
   });
 });
 

@@ -455,11 +455,13 @@ export function buildStreakRows(streakData: {
   windowStart: string;
   windowEnd: string;
 }): StreakRow[] {
-  const start = parseLogicalDate(streakData.windowStart as never);
+  // rows end at the window's final month so the current month is always
+  // the last row, matching the reference's prior-12-months framing
+  const end = parseLogicalDate(streakData.windowEnd as never);
   const rows: StreakRow[] = [];
   const monthIndex = new Map<string, number>();
-  for (let offset = 0; offset < 12; offset += 1) {
-    const total = start.year * 12 + (start.month - 1) + offset;
+  for (let offset = 11; offset >= 0; offset -= 1) {
+    const total = end.year * 12 + (end.month - 1) - offset;
     const year = Math.floor(total / 12);
     const month = (total % 12) + 1;
     const key = `${String(year).padStart(4, '0')}-${String(month).padStart(2, '0')}`;
