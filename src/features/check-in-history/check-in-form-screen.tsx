@@ -112,6 +112,7 @@ export function CheckInFormScreen({ boardId, checkInId }: CheckInFormScreenProps
 
   if (
     board.status === 'error' ||
+    (checkInId && existing.status === 'error') ||
     (checkInId && existing.status === 'ready' && existing.value === null) ||
     // a record reached through a mismatched board url is not exposed
     (loadedRecord && loadedRecord.boardId !== boardId)
