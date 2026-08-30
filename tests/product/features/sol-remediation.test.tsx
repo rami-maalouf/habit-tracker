@@ -457,6 +457,33 @@ describe('self-review fixes', () => {
     alertSpy.mockClear();
   });
 
+  it('retains saved amount configuration when amounts are toggled off in an edit', async () => {
+    const boardId = await seedBoard('units kept', {
+      tracksAmount: true,
+      amountUnit: 'km',
+      quickAmount: 5,
+    });
+    renderRouter('src/app', { initialUrl: `/boards/${boardId}` });
+    await screen.findByTestId('edit-board');
+    await press('edit-board');
+    await screen.findByTestId('board-title-input');
+    fireEvent(screen.getByTestId('amounts-toggle'), 'valueChange', false);
+    await settle();
+    await press('board-form-save');
+    await settle();
+
+    const deps = await core();
+    const boards = await listActiveBoards(deps);
+    if (!boards.ok) {
+      throw new Error('listing boards failed');
+    }
+    const saved = boards.value[0];
+    expect(saved.tracksAmount).toBe(false);
+    // the configuration survives the toggle for a later re-enable
+    expect(saved.amountUnit).toBe('km');
+    expect(saved.quickAmount).toBe(5);
+  });
+
   it('saves a board with amounts off despite stale hidden amount text', async () => {
     renderRouter('src/app', { initialUrl: '/' });
     await screen.findByTestId('empty-create-board');

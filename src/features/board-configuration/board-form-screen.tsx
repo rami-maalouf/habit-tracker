@@ -37,11 +37,14 @@ function draftToCommandFields(draft: BoardDraft) {
     accentHex: draft.accentHex,
     usesTintedBackground: draft.usesTintedBackground,
     tracksAmount: draft.tracksAmount,
-    // with amounts off, stale hidden field text must not block the save;
-    // the neutral defaults are what a fresh board carries
-    amountUnit:
-      draft.tracksAmount && draft.amountUnit.trim().length > 0 ? draft.amountUnit : null,
-    quickAmount: draft.tracksAmount ? (parseQuickAmount(draft.quickAmountText) ?? -1) : 1,
+    // with amounts off the fields are omitted entirely: stale hidden text
+    // neither blocks the save nor overwrites the retained configuration
+    ...(draft.tracksAmount
+      ? {
+          amountUnit: draft.amountUnit.trim().length > 0 ? draft.amountUnit : null,
+          quickAmount: parseQuickAmount(draft.quickAmountText) ?? -1,
+        }
+      : {}),
     tracksTime: draft.tracksTime,
     startOfDayMinute: draft.startOfDayMinute,
     metricsEnabled: draft.metricsEnabled,
