@@ -561,6 +561,101 @@ describe('round four: archived transitions and shifted days', () => {
   });
 });
 
+describe('round five: dst gaps and zone-stable edits', () => {
+  beforeEach(() => {
+    resetProductCoreForTests();
+    alertSpy.mockClear();
+  });
+
+  it('lands on the next valid time when the shift window hits a dst gap', async () => {
+    // march 8 2026 02:00-03:00 does not exist in us zones; a three-hour
+    // shift makes 02:30 belong to logical march 7 via the next calendar day
+    const hostZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    mockClock.zone = hostZone;
+    mockClock.utcMs = new Date(2026, 1, 20, 16, 0).getTime();
+    const boardId = await seedBoard('gap habit', {
+      tracksTime: true,
+      startOfDayMinute: 180,
+    });
+    mockClock.utcMs = new Date(2026, 2, 10, 16, 0).getTime();
+
+    renderRouter('src/app', { initialUrl: `/boards/${boardId}/check-ins` });
+    fireEvent.press(await screen.findByText('Add Check-In'));
+    await settle();
+    const pickerEvent = { nativeEvent: { timestamp: 0, utcOffset: 0 } };
+    fireEvent(
+      await screen.findByTestId('check-in-date'),
+      'valueChange',
+      pickerEvent,
+      new Date(2026, 2, 7, 12, 0),
+    );
+    fireEvent(
+      screen.getByTestId('check-in-time'),
+      'valueChange',
+      pickerEvent,
+      new Date(2026, 2, 7, 2, 30),
+    );
+    await press('check-in-save');
+    await settle();
+
+    const deps = await core();
+    const history = await getGroupedCheckInHistory(deps, boardId);
+    if (!history.ok) {
+      throw new Error('history query failed');
+    }
+    const record = history.value[0].days[0].checkIns[0];
+    expect(record.logicalDate).toBe('2026-03-07');
+    const gapHost = new Date(2026, 2, 8, 2, 30).getHours() !== 2;
+    const expected = gapHost
+      ? // both candidates fail in a gap zone: the start-of-day wall clock
+        // of the selected logical day is the next valid time
+        new Date(2026, 2, 7, 3, 0).getTime()
+      : // without a gap the next-calendar-day recombination holds
+        new Date(2026, 2, 8, 2, 30).getTime();
+    expect(record.occurredAtUtc).toBe(expected);
+  });
+
+  it('preserves the stored occurrence through a note-only edit after a zone change', async () => {
+    const boardId = await seedBoard('traveler', { tracksTime: true });
+    const deps = await core();
+    const created = await createCheckIn(deps, {
+      commandId: newCommandId(),
+      boardId,
+      logicalDate: '2026-08-29' as LogicalDate,
+      occurredAtUtc: Date.UTC(2026, 7, 29, 18, 45),
+      source: 'app',
+    });
+    if (!created.ok) {
+      throw new Error('seed check-in failed');
+    }
+    const before = await getGroupedCheckInHistory(deps, boardId);
+    if (!before.ok) {
+      throw new Error('history query failed');
+    }
+    const seeded = before.value[0].days[0].checkIns[0];
+
+    // the device moves to a far zone; a note-only edit must not resubmit
+    // or rewrite the occurrence instant, zone, or offset
+    mockClock.zone = 'Pacific/Kiritimati';
+    renderRouter('src/app', { initialUrl: `/boards/${boardId}/check-ins` });
+    fireEvent.press(await screen.findByLabelText(/traveler/));
+    await settle();
+    const note = await screen.findByTestId('check-in-note');
+    fireEvent.changeText(note, 'same moment, new zone');
+    await press('check-in-save');
+    await settle();
+
+    const after = await getGroupedCheckInHistory(deps, boardId);
+    if (!after.ok) {
+      throw new Error('history query failed');
+    }
+    const record = after.value[0].days[0].checkIns[0];
+    expect(record.note).toBe('same moment, new zone');
+    expect(record.occurredAtUtc).toBe(seeded.occurredAtUtc);
+    expect(record.timeZoneId).toBe(seeded.timeZoneId);
+  });
+});
+
 describe('provider retry after a failed open', () => {
   beforeEach(() => {
     resetProductCoreForTests();
