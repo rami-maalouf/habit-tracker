@@ -1,3 +1,4 @@
+import { useCallback, useRef } from 'react';
 import { ScrollView, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
@@ -29,6 +30,15 @@ function cellColor(intensity: string, eligible: boolean, colors: DerivedBoardCol
 
 // iso monday-through-sunday rows; weeks scroll horizontally, newest at the end
 export function HeatmapView({ weeks, colors, testID }: HeatmapViewProps) {
+  // scroll to the newest week once per mount; re-renders (any product
+  // invalidation) must not snap a user-scrolled heatmap back to the end
+  const didAutoScroll = useRef(false);
+  const autoScrollToEnd = useCallback((scroll: ScrollView | null) => {
+    if (scroll && !didAutoScroll.current) {
+      didAutoScroll.current = true;
+      scroll.scrollToEnd?.({ animated: false });
+    }
+  }, []);
   return (
     <View style={{ flexDirection: 'row', gap: spacing.sm }} testID={testID}>
       <View
@@ -46,8 +56,7 @@ export function HeatmapView({ weeks, colors, testID }: HeatmapViewProps) {
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={{ gap: 3 }}
-        // start at the newest weeks; host instances in tests have no methods
-        ref={(scroll) => scroll?.scrollToEnd?.({ animated: false })}
+        ref={autoScrollToEnd}
       >
         {weeks.map((week, weekIndex) => (
           <View key={weekIndex} style={{ gap: 3 }}>
