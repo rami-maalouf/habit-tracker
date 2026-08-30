@@ -26,6 +26,7 @@ export default function RootLayout() {
           <Stack.Screen name="boards/[boardId]/check-ins/new" options={sheet} />
           <Stack.Screen name="boards/[boardId]/check-ins/[checkInId]" options={sheet} />
           <Stack.Screen name="settings/index" options={sheet} />
+          <Stack.Screen name="settings/archived" options={sheet} />
         </Stack>
       </ProductProvider>
     </ThemeProvider>

@@ -263,6 +263,8 @@ describe('archived boards through settings', () => {
     expect(archived.ok).toBe(true);
 
     renderRouter('src/app', { initialUrl: '/settings' });
+    await screen.findByTestId('open-archived-boards');
+    await press('open-archived-boards');
     await screen.findByTestId(`archived-board-${boardId}`);
     await press(`archived-board-${boardId}`);
     await settle();
@@ -273,7 +275,7 @@ describe('archived boards through settings', () => {
   });
 
   it('shows the empty archived state when nothing is archived', async () => {
-    renderRouter('src/app', { initialUrl: '/settings' });
+    renderRouter('src/app', { initialUrl: '/settings/archived' });
     expect(await screen.findByTestId('archived-empty')).toBeOnTheScreen();
   });
 
