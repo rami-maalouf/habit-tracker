@@ -56,14 +56,18 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
   const dismissed = useProductQuery((c) => getMetricsEducationDismissed(c), []);
   const [examplesOpen, setExamplesOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [quickPending, setQuickPending] = useState(false);
 
   const quickAdd = useCallback(async () => {
+    // a rapid double tap must not record two check-ins
+    setQuickPending(true);
     setActionError(null);
     const result = await createCheckIn(core, {
       commandId: nextCommandId(),
       boardId,
       source: 'app',
     });
+    setQuickPending(false);
     if (result.ok) {
       void triggerActionHaptic();
       invalidate();
@@ -224,7 +228,13 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
                 void dismissMetricsEducation(core, {
                   commandId: nextCommandId(),
                   boardId,
-                }).then(() => invalidate());
+                }).then((result) => {
+                  if (result.ok) {
+                    invalidate();
+                  } else {
+                    setActionError(result.error.message);
+                  }
+                });
               }}
               label="Dismiss metrics education"
               testID="dismiss-education"
@@ -372,7 +382,12 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
               <AppText selectable={false}>Journal</AppText>
             </ProductPressable>
           </View>
-          <ProductPressable onPress={quickAdd} label={`Check in to ${record.title}`} testID="detail-quick">
+          <ProductPressable
+            onPress={quickAdd}
+            disabled={quickPending}
+            label={`Check in to ${record.title}`}
+            testID="detail-quick"
+          >
             <View
               style={{
                 width: 52,
