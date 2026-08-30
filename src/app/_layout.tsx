@@ -1,4 +1,5 @@
-import { Stack } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { useColorScheme } from 'react-native';
 
 import { ProductProvider } from '@/features/product-store';
 
@@ -11,17 +12,22 @@ const sheet = {
 };
 
 export default function RootLayout() {
+  // without an explicit navigation theme the headers stay light in dark
+  // mode (invisible sheet titles, light button pills on black)
+  const scheme = useColorScheme();
   return (
-    <ProductProvider>
-      <Stack>
-        <Stack.Screen name="boards/new" options={sheet} />
-        <Stack.Screen name="boards/[boardId]/edit" options={sheet} />
-        <Stack.Screen name="boards/[boardId]/options" options={sheet} />
-        <Stack.Screen name="boards/[boardId]/check-ins/index" options={sheet} />
-        <Stack.Screen name="boards/[boardId]/check-ins/new" options={sheet} />
-        <Stack.Screen name="boards/[boardId]/check-ins/[checkInId]" options={sheet} />
-        <Stack.Screen name="settings/index" options={sheet} />
-      </Stack>
-    </ProductProvider>
+    <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <ProductProvider>
+        <Stack>
+          <Stack.Screen name="boards/new" options={sheet} />
+          <Stack.Screen name="boards/[boardId]/edit" options={sheet} />
+          <Stack.Screen name="boards/[boardId]/options" options={sheet} />
+          <Stack.Screen name="boards/[boardId]/check-ins/index" options={sheet} />
+          <Stack.Screen name="boards/[boardId]/check-ins/new" options={sheet} />
+          <Stack.Screen name="boards/[boardId]/check-ins/[checkInId]" options={sheet} />
+          <Stack.Screen name="settings/index" options={sheet} />
+        </Stack>
+      </ProductProvider>
+    </ThemeProvider>
   );
 }
