@@ -9,6 +9,7 @@ Evidence images live under `.artifacts/` or system temp paths and stay out of Gi
 - 2026-08-30: human approved the spec (recorded in spec).
 - 2026-08-30: human ran the privileged Xcode license/first-launch step and said "Let's run it", approving plan execution.
 - 2026-08-30: human approved the simulator equivalent for success criterion 3: iPhone 17 Pro on iOS 27.0 replaces iPhone 16 Pro on iOS 26.6. No iOS 26.6 runtime or iPhone 16 Pro device exists on this machine (installed runtimes: iOS 26.5, iOS 27.0).
+- 2026-08-30: human selected "product spec only" governance. `SPEC-ripples-product.md` (authored by a GPT-5.6 Sol session) specifies all modules after `native-foundation`. Thirteen per-module spec drafts produced the same day were discarded before commit. `CAPABILITY-MAP.md` updated to record the two-spec structure.
 
 ## T1 - simulator toolchain repair and argent preflight
 
