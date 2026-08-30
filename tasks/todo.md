@@ -28,12 +28,12 @@ Every task ends with: full validation suite, independent GPT-5.6 Sol pass, Argen
 
 ## T3 - route migration to src/app and starter removal
 
-- [ ] red: router tests for `/` (title `Ripples`, selectable `Native foundation ready`) and `+not-found` recovery
-- [ ] `src/app/_layout.tsx` native stack, `src/app/index.tsx`, `src/app/+not-found.tsx`
-- [ ] tsconfig alias `@/*` -> `./src/*`; `app.json` `ios.deploymentTarget: "18.6"`
-- [ ] delete `app/`, `components/`, `constants/`, Space Mono font; remove dead starter deps (ask first if ambiguous)
-- [ ] no dead imports, routes, assets; `git diff --check` clean
-- [ ] gates: Sol pass, Argent navigation evidence, commit `feat: replace starter with minimal expo router stack in src/app`, push
+- [x] red: router tests for `/` (title `Ripples`, selectable `Native foundation ready`) and `+not-found` recovery (behavioral press asserts return to `/`)
+- [x] `src/app/_layout.tsx` native stack, `src/app/index.tsx`, `src/app/+not-found.tsx`
+- [x] tsconfig alias `@/*` -> `./src/*`; jest moduleNameMapper; `app.json` `ios.deploymentTarget: "18.6"`
+- [x] deleted `app/`, `components/`, `constants/`, Space Mono font; removed expo-font, expo-web-browser, expo-symbols, expo-status-bar (packages and plugin entries)
+- [x] no dead imports, routes, assets; `git diff --check` clean; validate 4/4 at 100 percent coverage
+- [x] gates: Sol pass (after behavioral-test remediation), Argent navigation evidence (deep link, recovery tap, clean logs), commit `feat: replace starter with minimal expo router stack in src/app`, push
 
 ## T4 - semantic theme tokens
 

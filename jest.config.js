@@ -1,9 +1,10 @@
 /** @type {import('jest').Config} */
 module.exports = {
   preset: 'jest-expo',
-  // bun variant of the expo-recommended pattern (docs.expo.dev/develop/unit-testing)
+  // bun variant of the expo-recommended pattern (docs.expo.dev/develop/unit-testing),
+  // plus standard-navigation, which expo-router 57 depends on and ships as esm
   transformIgnorePatterns: [
-    'node_modules/(?!(.bun|(jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg))',
+    'node_modules/(?!(.bun|(jest-)?react-native|@react-native(-community)?|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|standard-navigation|@sentry/react-native|native-base|react-native-svg))',
   ],
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',
@@ -13,6 +14,9 @@ module.exports = {
     '!src/app/**',
     '!src/**/*.d.ts',
   ],
+  moduleNameMapper: {
+    '^@/(.*)$': '<rootDir>/src/$1',
+  },
   coverageThreshold: {
     global: {
       lines: 90,

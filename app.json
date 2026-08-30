@@ -9,6 +9,7 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
+      "deploymentTarget": "18.6",
       "bundleIdentifier": "com.ramimaalouf.habittracker",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -38,9 +39,6 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-font",
-      "expo-status-bar",
-      "expo-web-browser",
       "expo-image"
     ],
     "experiments": {

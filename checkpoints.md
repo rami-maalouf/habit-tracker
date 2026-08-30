@@ -54,4 +54,20 @@ Evidence images live under `.artifacts/` or system temp paths and stay out of Gi
    - `tsconfig.json` gains `types: ["jest", "node"]` (TypeScript 6 does not auto-include @types) and `src/testing/expo-router-matchers.d.ts` declares the router matcher types expo-router ships empty.
    - The dev client build (`expo run:ios`) moved earlier than the plan's T7 slot so T2 through T6 can produce Argent evidence; T7 still owns full device validation.
    - Starter files received minimal real fixes (no rule silencing) to keep the commit green; they are deleted in T3.
+8. Commit and push: `7bc374d`, pushed to `origin/main`.
+
+## T3 - route migration to src/app and starter removal
+
+1. Task id: T3. Acceptance: `/` renders stack title `Ripples` and selectable `Native foundation ready` with automatic inset adjustment; `+not-found` recovers; starter removed with no dead imports, routes, assets, or dependencies; alias `@/*` -> `./src/*`; `ios.deploymentTarget` 18.6.
+2. Author: Fable 5. Delegated agents: none.
+3. Files changed: `src/app/{_layout,index,+not-found}.tsx` (new), `tests/native-foundation/routes.test.tsx` (new), `tsconfig.json` (alias), `jest.config.js` (moduleNameMapper, `standard-navigation` transform allowlist), `app.json` (deploymentTarget, removed expo-font/expo-status-bar/expo-web-browser plugins), `package.json` and `bun.lock` (removed expo-font, expo-web-browser, expo-symbols, expo-status-bar); deleted `app/`, `components/`, `constants/`, `assets/fonts/`.
+4. Tests and static checks: TDD red recorded, then green (4/4). `bun run validate` passes at 100 percent coverage. `bunx expo-doctor` 21/21. `git diff --check` clean. Typed routes regenerate from `src/app` (Metro restart required; log confirms "Using src/app as the root directory for Expo Router").
+5. GPT-5.6 Sol review: fail on first pass (recovery test did not press the link; inset not asserted). Remediated with a behavioral recovery test and inset assertion; pass on re-review.
+6. Argent evidence (target `93EEF062-B4DC-4989-AF77-CF47EE2A9816`):
+   - before: `describe` of `/` shows `Ripples` title group and `Native foundation ready` static text.
+   - navigation: `open-url habittracker://this-route-does-not-exist` deep-links to `Not found`; `describe` shows the recovery link; tapping it (discovery coordinates) lands on `/` with no stale back entry after the `replace` fix.
+   - back behavior: in the pushed variant the header exposed the native `Ripples` back button (`id=BackButton`).
+   - runtime-log result: `debugger-log-registry` connected, 0 entries.
+   - final screenshot captured after recovery.
+7. Deviations from the reference: none. Notable in-spec decisions: `+not-found` recovery uses `replace` so the unmatched route does not stay on the stack; Jest asserts the stack title and inset behavior through props because the native header and scroll insets render natively, with the on-device result covered by the Argent evidence above. The recovery test presses the link and asserts the pathname returns to `/`.
 8. Commit and push: recorded after gates pass.
