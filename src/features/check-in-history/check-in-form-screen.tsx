@@ -410,7 +410,9 @@ function CheckInFormBody({
               value={dateFromLogical(logicalDate)}
               mode="date"
               display="compact"
-              maximumDate={new Date(core.clock.nowUtcMs())}
+              // the ceiling is the logical today: inside a shifted start of
+              // day the physical date is already tomorrow's logical future
+              maximumDate={dateFromLogical(today)}
               accentColor={colors.accent}
               onValueChange={(_event, date) => changeDate(date)}
               testID="check-in-date"
