@@ -26,6 +26,7 @@ module.exports = {
     // reviewed behavior-focused mock: jest-expo provides no @expo/ui mock and
     // the real package requires the native ObservableState runtime
     '^@expo/ui$': '<rootDir>/src/testing/expo-ui.mock.tsx',
+    '^@expo/ui/community/slider$': '<rootDir>/src/testing/expo-ui-slider.mock.tsx',
     '^@expo/ui/community/datetime-picker$': '<rootDir>/src/testing/expo-ui-datetime.mock.tsx',
     // route tests run the real domain stack over node:sqlite instead of the
     // device sqlite adapter
