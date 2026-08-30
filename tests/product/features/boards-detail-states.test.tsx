@@ -416,13 +416,13 @@ describe('stale sheets against removed records', () => {
     expect(await screen.findByTestId('board-action-error')).toBeOnTheScreen();
   });
 
-  it('walks the not-found screen from the journal placeholder action', async () => {
+  it('opens the journal from the detail actions', async () => {
     const boardId = await seedSimpleBoard('curious');
     renderRouter('src/app', { initialUrl: `/boards/${boardId}` });
     await screen.findByTestId('board-actions');
 
     await press('open-journal');
-    expect(await screen.findByText('This screen does not exist.')).toBeOnTheScreen();
+    expect(await screen.findByTestId('journal-empty')).toBeOnTheScreen();
   });
 
   it('fails a stale check-in save and delete after the record is removed', async () => {
