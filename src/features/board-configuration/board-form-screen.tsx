@@ -403,7 +403,15 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
         </FormRow>
 
         <FormRow>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+          {/* seven 44-point targets exceed the card width, so the row wraps */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: spacing.sm,
+            }}
+          >
             <ProductPressable
               onPress={() => setCustomColorOpen((current) => !current)}
               label="Custom color"
