@@ -273,10 +273,18 @@ function CheckInFormBody({
     }
     setSaving(true);
     setError(null);
-    const amount =
-      board.tracksAmount && amountText.trim().length > 0
-        ? Number(amountText.replace(',', '.'))
-        : undefined;
+    // an amount board needs an explicit value: a cleared field must not
+    // silently fall back to the quick amount or keep the old value
+    if (board.tracksAmount && amountText.trim().length === 0) {
+      setError({
+        code: 'validation',
+        message: 'Enter an amount greater than zero.',
+        retryable: false,
+      });
+      setSaving(false);
+      return;
+    }
+    const amount = board.tracksAmount ? Number(amountText.replace(',', '.')) : undefined;
     const occurredAtUtc =
       board.tracksTime && timeOfDay !== null && (record === null || occurrenceEdited)
         ? instantFor(logicalDate, timeOfDay, deviceZone, board.startOfDayMinute)
