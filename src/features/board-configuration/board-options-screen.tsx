@@ -1,3 +1,4 @@
+import { Host, Slider } from '@expo/ui';
 import { Stack, useRouter } from 'expo-router';
 import { Switch, View, ScrollView } from 'react-native';
 
@@ -135,22 +136,22 @@ export function BoardOptionsScreen({ expectedBoardId }: { expectedBoardId: Board
               </AppText>
             </ProductPressable>
             <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: spacing.md }}>
-              <View
-                style={{
-                  height: 6,
-                  borderRadius: radius.sm,
-                  backgroundColor: semanticColor('fill', scheme),
-                }}
-              >
-                <View
-                  style={{
-                    width: `${(draft.startOfDayMinute / max) * 100}%`,
-                    height: 6,
-                    borderRadius: radius.sm,
-                    backgroundColor: semanticColor('label', scheme),
-                  }}
+              {/* the native slider drags in the same 30-minute steps the
+                  buttons use */}
+              <Host matchContents>
+                <Slider
+                  value={draft.startOfDayMinute}
+                  min={0}
+                  max={max}
+                  step={step}
+                  onValueChange={(value) =>
+                    updateDraft({
+                      startOfDayMinute: Math.min(max, Math.max(0, Math.round(value / step) * step)),
+                    })
+                  }
+                  testID="start-of-day-slider"
                 />
-              </View>
+              </Host>
             </View>
             <ProductPressable
               onPress={() =>
