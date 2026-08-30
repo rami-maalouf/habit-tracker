@@ -88,7 +88,7 @@ export function JournalScreen({ boardId }: { boardId: BoardId }) {
                     : () => router.push(`/boards/${boardId}/check-ins/${item.id}`)
                 }
                 disabled={archived}
-                label={`Journal entry, ${meta}`}
+                label={`Journal entry, ${meta}. ${item.note ?? ''}`}
                 hint={archived ? undefined : 'Opens this check-in'}
                 testID={`journal-entry-${item.id}`}
               >
