@@ -92,6 +92,16 @@ export function CheckInHistoryScreen({ boardId }: { boardId: BoardId }) {
   const colors = record ? deriveBoardColors(record.accentHex, scheme) : null;
   const archived = record?.archivedAt !== null && record !== null;
 
+  // loaded row count gates page growth: once a page comes back smaller
+  // than its limit, everything is loaded and end-reached becomes a no-op
+  const loadedRows =
+    history.status === 'ready'
+      ? history.value.reduce(
+          (total, month) =>
+            total + month.days.reduce((dayTotal, day) => dayTotal + day.checkIns.length, 0),
+          0,
+        )
+      : 0;
   const sections: DaySection[] =
     history.status === 'ready'
       ? history.value.flatMap((month) =>
@@ -147,9 +157,14 @@ export function CheckInHistoryScreen({ boardId }: { boardId: BoardId }) {
         </View>
       ) : (
         <SectionList
+          testID="history-list"
           sections={sections}
           keyExtractor={(item) => item.id}
-          onEndReached={() => setPageLimit((current) => current + 200)}
+          onEndReached={() => {
+            if (loadedRows >= pageLimit) {
+              setPageLimit((current) => current + 200);
+            }
+          }}
           onEndReachedThreshold={0.5}
           contentInsetAdjustmentBehavior="automatic"
           contentContainerStyle={{ padding: spacing.lg, gap: spacing.sm }}

@@ -560,6 +560,58 @@ describe('self-review fixes', () => {
   });
 });
 
+describe('history paging', () => {
+  beforeEach(() => {
+    resetProductCoreForTests();
+    alertSpy.mockClear();
+  });
+
+  it('grows the page at the list end and stops once everything is loaded', async () => {
+    const boardId = await seedBoard('prolific');
+    const deps = await core();
+    // 200 records fill the first page exactly; one older record sits beyond
+    for (let index = 0; index < 200; index += 1) {
+      const created = await createCheckIn(deps, {
+        commandId: newCommandId(),
+        boardId,
+        logicalDate: '2026-08-29' as LogicalDate,
+        source: 'app',
+      });
+      if (!created.ok) {
+        throw new Error(created.error.message);
+      }
+    }
+    const older = await createCheckIn(deps, {
+      commandId: newCommandId(),
+      boardId,
+      logicalDate: '2026-08-28' as LogicalDate,
+      source: 'app',
+    });
+    expect(older.ok).toBe(true);
+
+    renderRouter('src/app', { initialUrl: `/boards/${boardId}/check-ins` });
+    await screen.findByText('Aug 29');
+    // list virtualization keeps far rows unmounted, so paging is asserted
+    // through the section data the list receives
+    const { SectionList } = jest.requireActual<typeof import('react-native')>('react-native');
+    const sectionsOf = () =>
+      (screen.UNSAFE_getByType(SectionList).props.sections as { title: string }[]).map(
+        (section) => section.title,
+      );
+    expect(sectionsOf()).toEqual(['Aug 29']);
+
+    // reaching the end grows the page and loads the older day
+    fireEvent(screen.getByTestId('history-list'), 'endReached');
+    await settle();
+    expect(sectionsOf()).toEqual(['Aug 29', 'Aug 28']);
+
+    // a further end-reach with everything loaded is a no-op
+    fireEvent(screen.getByTestId('history-list'), 'endReached');
+    await settle();
+    expect(sectionsOf()).toEqual(['Aug 29', 'Aug 28']);
+  });
+});
+
 describe('round four: archived transitions and shifted days', () => {
   beforeEach(() => {
     resetProductCoreForTests();
