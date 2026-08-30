@@ -1,3 +1,18 @@
+# Checkpoints
+
+## Ripples product (SPEC-ripples-product.md) - stage checkpoints
+
+### P1 - tracking core
+
+1. Task id: P1 (tracking-core). Acceptance: shared SQLite source of truth with migrations, commands, queries, projections, HLC, receipts, outbox; approved dependencies installed via Expo Install; core coverage at 100 percent on all four metrics; real-engine tests.
+2. Author: Fable 5. Delegated agents: none.
+3. Files changed: `src/core/**` (domain, calendar, analytics, persistence, sync), `src/platform/database/**` (expo-sqlite adapter, app group path selection, composition root), `tests/product/**` (132-test suite over `node:sqlite`), `jest.config.js` (core 100 percent thresholds, reviewed type-only and adapter exclusions), `package.json` (focused scripts, product dependencies), `tasks/plan-product.md`.
+4. Tests and static checks: 132/132; global coverage 99.67/99.55/98.72/100; `./src/core/` at 100/100/100/100; lint, typecheck, `bunx expo-doctor` 21/21, `git diff --check` all pass. Migration suite runs against a real SQL engine (`node:sqlite`) implementing the same port as `expo-sqlite`.
+5. GPT-5.6 Sol review: fail on first pass with a deep findings list (DST wall-clock rule, amount-config retention, descendant outbox tombstones, gap-bridged streaks, seven-day thresholds, heatmap window edges, archived-board edit guards, void receipt replay, user_version placement, per-connection foreign keys, read-transaction snapshots, branded command ids, lint boundary). All items remediated with dedicated regression tests (142 tests, core back at 100 on all four metrics); focused re-reviews passed, including the dedicated-write-connection foreign-key design and per-period outbox rows.
+6. Argent evidence (target `93EEF062-B4DC-4989-AF77-CF47EE2A9816`), tests type: relaunch, root route visible (await 40 ms), log registry 0 entries. Product UI lands in P2; the core has no visible surface yet.
+7. Notable in-spec decisions: `node:sqlite` (built into Node, no new dependency) provides the real-engine test database; the app group directory resolves through `Paths.appleSharedContainers` and falls back to the default location until the widget entitlement lands (P7); board-summary consistency uses a rolling 30-day window (the spec fixes the formula but not the summary-card window); `dismissMetricsEducation` added as a companion command for the settings-owned dismissal list.
+8. Commit and push: recorded after gates pass.
+
 # Checkpoints: native-foundation
 
 Active module: `native-foundation`. Spec: `SPEC-native-foundation.md`. Plan: `tasks/plan.md`.

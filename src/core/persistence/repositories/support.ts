@@ -1,0 +1,251 @@
+import type { AppSettings, BoardActivityPeriod, SelectedIcon } from '../../domain/entities';
+import type { BoardId, DeviceId, LogicalDate } from '../../domain/ids';
+import type { SqlExecutor } from '../database';
+
+// --- app settings -----------------------------------------------------------
+
+type SettingsRow = {
+  schema_revision: number;
+  selected_icon: string;
+  icloud_sync_enabled: number;
+  metrics_education_dismissed: string;
+  device_id: string;
+  hlc_wall_time: number;
+  hlc_counter: number;
+  last_sync_at: number | null;
+};
+
+export async function getSettings(tx: SqlExecutor): Promise<AppSettings | null> {
+  const row = await tx.getFirstAsync<SettingsRow>('SELECT * FROM app_settings WHERE id = 1');
+  if (!row) {
+    return null;
+  }
+  return {
+    schemaRevision: row.schema_revision,
+    selectedIcon: row.selected_icon as SelectedIcon,
+    iCloudSyncEnabled: row.icloud_sync_enabled === 1,
+    metricsEducationDismissed: JSON.parse(row.metrics_education_dismissed) as BoardId[],
+    deviceId: row.device_id as DeviceId,
+    hlcWallTime: row.hlc_wall_time,
+    hlcCounter: row.hlc_counter,
+    lastSyncAtUtc: row.last_sync_at,
+  };
+}
+
+export async function insertSettings(
+  tx: SqlExecutor,
+  settings: { deviceId: DeviceId; schemaRevision: number },
+): Promise<void> {
+  await tx.runAsync(
+    `INSERT INTO app_settings (id, schema_revision, device_id) VALUES (1, ?, ?)`,
+    [settings.schemaRevision, settings.deviceId],
+  );
+}
+
+export async function saveHlc(
+  tx: SqlExecutor,
+  hlc: { wallTime: number; counter: number },
+): Promise<void> {
+  await tx.runAsync('UPDATE app_settings SET hlc_wall_time = ?, hlc_counter = ? WHERE id = 1', [
+    hlc.wallTime,
+    hlc.counter,
+  ]);
+}
+
+export async function saveSelectedIcon(tx: SqlExecutor, icon: SelectedIcon): Promise<void> {
+  await tx.runAsync('UPDATE app_settings SET selected_icon = ? WHERE id = 1', [icon]);
+}
+
+export async function saveICloudSyncEnabled(tx: SqlExecutor, enabled: boolean): Promise<void> {
+  await tx.runAsync('UPDATE app_settings SET icloud_sync_enabled = ? WHERE id = 1', [
+    enabled ? 1 : 0,
+  ]);
+}
+
+export async function saveMetricsEducationDismissed(
+  tx: SqlExecutor,
+  boardIds: BoardId[],
+): Promise<void> {
+  await tx.runAsync('UPDATE app_settings SET metrics_education_dismissed = ? WHERE id = 1', [
+    JSON.stringify(boardIds),
+  ]);
+}
+
+// --- command receipts -------------------------------------------------------
+
+export async function getReceipt(tx: SqlExecutor, commandId: string): Promise<string | null> {
+  const row = await tx.getFirstAsync<{ outcome: string }>(
+    'SELECT outcome FROM command_receipts WHERE command_id = ?',
+    [commandId],
+  );
+  return row?.outcome ?? null;
+}
+
+export async function insertReceipt(
+  tx: SqlExecutor,
+  commandId: string,
+  outcome: string,
+  createdAt: number,
+): Promise<void> {
+  await tx.runAsync(
+    'INSERT INTO command_receipts (command_id, outcome, created_at) VALUES (?, ?, ?)',
+    [commandId, outcome, createdAt],
+  );
+}
+
+// --- mutation outbox ---------------------------------------------------------
+
+export type OutboxEntityType =
+  | 'board'
+  | 'check_in'
+  | 'reminder'
+  | 'activity_period'
+  | 'settings';
+
+export async function appendOutbox(
+  tx: SqlExecutor,
+  entityType: OutboxEntityType,
+  entityId: string,
+  mutationStamp: string,
+  createdAt: number,
+): Promise<void> {
+  await tx.runAsync(
+    'INSERT INTO mutation_outbox (entity_type, entity_id, mutation_stamp, created_at) VALUES (?, ?, ?, ?)',
+    [entityType, entityId, mutationStamp, createdAt],
+  );
+}
+
+// --- board activity periods --------------------------------------------------
+
+type PeriodRow = {
+  id: number;
+  board_id: string;
+  start_date: string;
+  end_date: string | null;
+  mutation_stamp: string;
+  deleted_at: number | null;
+};
+
+function toPeriod(row: PeriodRow): BoardActivityPeriod {
+  return {
+    id: row.id,
+    boardId: row.board_id as BoardId,
+    startDate: row.start_date as LogicalDate,
+    endDate: row.end_date as LogicalDate | null,
+    mutationStamp: row.mutation_stamp,
+    deletedAt: row.deleted_at,
+  };
+}
+
+export async function listBoardPeriods(
+  tx: SqlExecutor,
+  boardId: BoardId,
+): Promise<BoardActivityPeriod[]> {
+  const rows = await tx.getAllAsync<PeriodRow>(
+    `SELECT * FROM board_activity_periods
+     WHERE board_id = ? AND deleted_at IS NULL ORDER BY start_date`,
+    [boardId],
+  );
+  return rows.map(toPeriod);
+}
+
+export async function insertPeriod(
+  tx: SqlExecutor,
+  boardId: BoardId,
+  startDate: LogicalDate,
+  mutationStamp: string,
+): Promise<number> {
+  await tx.runAsync(
+    `INSERT INTO board_activity_periods (board_id, start_date, end_date, mutation_stamp, deleted_at)
+     VALUES (?, ?, NULL, ?, NULL)`,
+    [boardId, startDate, mutationStamp],
+  );
+  const row = await tx.getFirstAsync<{ id: number }>(
+    'SELECT id FROM board_activity_periods WHERE board_id = ? ORDER BY id DESC LIMIT 1',
+    [boardId],
+  );
+  return row?.id ?? 0;
+}
+
+export async function closeOpenPeriod(
+  tx: SqlExecutor,
+  boardId: BoardId,
+  endDate: LogicalDate,
+  mutationStamp: string,
+): Promise<number[]> {
+  const open = await tx.getAllAsync<{ id: number }>(
+    'SELECT id FROM board_activity_periods WHERE board_id = ? AND end_date IS NULL AND deleted_at IS NULL',
+    [boardId],
+  );
+  await tx.runAsync(
+    `UPDATE board_activity_periods SET end_date = ?, mutation_stamp = ?
+     WHERE board_id = ? AND end_date IS NULL AND deleted_at IS NULL`,
+    [endDate, mutationStamp, boardId],
+  );
+  return open.map((row) => row.id);
+}
+
+export async function reopenPeriodEndingOn(
+  tx: SqlExecutor,
+  boardId: BoardId,
+  endDate: LogicalDate,
+  mutationStamp: string,
+): Promise<number | null> {
+  const row = await tx.getFirstAsync<{ id: number }>(
+    'SELECT id FROM board_activity_periods WHERE board_id = ? AND end_date = ? AND deleted_at IS NULL LIMIT 1',
+    [boardId, endDate],
+  );
+  if (!row) {
+    return null;
+  }
+  await tx.runAsync(
+    `UPDATE board_activity_periods SET end_date = NULL, mutation_stamp = ? WHERE id = ?`,
+    [mutationStamp, row.id],
+  );
+  return row.id;
+}
+
+export async function tombstoneBoardGraph(
+  tx: SqlExecutor,
+  boardId: BoardId,
+  deletedAt: number,
+  mutationStamp: string,
+): Promise<{ checkInIds: string[]; reminderIds: string[]; periodIds: number[] }> {
+  const checkIns = await tx.getAllAsync<{ id: string }>(
+    'SELECT id FROM check_ins WHERE board_id = ? AND deleted_at IS NULL',
+    [boardId],
+  );
+  const reminders = await tx.getAllAsync<{ id: string }>(
+    'SELECT id FROM reminders WHERE board_id = ? AND deleted_at IS NULL',
+    [boardId],
+  );
+  const periods = await tx.getAllAsync<{ id: number }>(
+    'SELECT id FROM board_activity_periods WHERE board_id = ? AND deleted_at IS NULL',
+    [boardId],
+  );
+  await tx.runAsync(
+    'UPDATE boards SET deleted_at = ?, updated_at = ?, mutation_stamp = ? WHERE id = ?',
+    [deletedAt, deletedAt, mutationStamp, boardId],
+  );
+  await tx.runAsync(
+    'UPDATE check_ins SET deleted_at = ?, updated_at = ?, mutation_stamp = ? WHERE board_id = ? AND deleted_at IS NULL',
+    [deletedAt, deletedAt, mutationStamp, boardId],
+  );
+  await tx.runAsync(
+    'UPDATE reminders SET deleted_at = ?, updated_at = ?, mutation_stamp = ? WHERE board_id = ? AND deleted_at IS NULL',
+    [deletedAt, deletedAt, mutationStamp, boardId],
+  );
+  await tx.runAsync(
+    'UPDATE board_activity_periods SET deleted_at = ?, mutation_stamp = ? WHERE board_id = ? AND deleted_at IS NULL',
+    [deletedAt, mutationStamp, boardId],
+  );
+  await tx.runAsync(
+    'DELETE FROM reminder_schedule WHERE reminder_id IN (SELECT id FROM reminders WHERE board_id = ?)',
+    [boardId],
+  );
+  return {
+    checkInIds: checkIns.map((row) => row.id),
+    reminderIds: reminders.map((row) => row.id),
+    periodIds: periods.map((row) => row.id),
+  };
+}

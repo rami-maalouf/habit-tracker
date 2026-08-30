@@ -16,6 +16,11 @@ module.exports = {
     // reviewed exclusion: test infrastructure (render helper and mocks) is
     // not product logic
     '!src/testing/**',
+    // reviewed exclusions: type-only port and interface declarations
+    '!src/core/domain/ports.ts',
+    '!src/core/persistence/database.ts',
+    // reviewed exclusion: thin expo adapters proven on device through argent
+    '!src/platform/database/**',
   ],
   moduleNameMapper: {
     // reviewed behavior-focused mock: jest-expo provides no @expo/ui mock and
@@ -29,6 +34,14 @@ module.exports = {
       statements: 90,
       functions: 90,
       branches: 90,
+    },
+    // the product spec requires full branch coverage for domain commands,
+    // calendar, analytics formulas, migrations, export, and sync logic
+    './src/core/': {
+      lines: 100,
+      statements: 100,
+      functions: 100,
+      branches: 100,
     },
   },
 };

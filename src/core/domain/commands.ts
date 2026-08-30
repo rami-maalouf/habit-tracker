@@ -1,0 +1,661 @@
+import { currentLogicalDate, offsetMinutesAt } from '../calendar/logical-date';
+import type { SqlDatabase, SqlExecutor } from '../persistence/database';
+import { rebuildWidgetRows } from '../persistence/projections/widget-rows';
+import {
+  getBoardById,
+  insertBoard,
+  lastActiveOrderKey,
+  updateBoardRow,
+} from '../persistence/repositories/boards';
+import {
+  getCheckInById,
+  insertCheckIn,
+  updateCheckInRow,
+} from '../persistence/repositories/check-ins';
+import {
+  appendOutbox,
+  closeOpenPeriod,
+  getReceipt,
+  getSettings,
+  insertPeriod,
+  insertReceipt,
+  reopenPeriodEndingOn,
+  saveHlc,
+  saveICloudSyncEnabled,
+  saveMetricsEducationDismissed,
+  saveSelectedIcon,
+  tombstoneBoardGraph,
+} from '../persistence/repositories/support';
+import type { HlcState } from '../sync/hybrid-clock';
+import { advance, encodeStamp } from '../sync/hybrid-clock';
+import type { Board, CheckIn, CheckInSource, SelectedIcon } from './entities';
+import type { BoardId, CheckInId, CommandId, LogicalDate } from './ids';
+import { isUuidV4 } from './ids';
+import { orderKeyAfter, orderKeyBetween } from './order-key';
+import type { Clock, IdGenerator } from './ports';
+import type { DomainResult } from './result';
+import { err, ok } from './result';
+import {
+  validateAccentHex,
+  validateAmount,
+  validateLogicalDateInput,
+  validateNote,
+  validateStartOfDayMinute,
+  validateSymbol,
+  validateTitle,
+  validateUnit,
+} from './validation';
+
+export type CommandDeps = {
+  db: SqlDatabase;
+  clock: Clock;
+  ids: IdGenerator;
+};
+
+type CommandContext = {
+  tx: SqlExecutor;
+  now: number;
+  timeZoneId: string;
+  settings: NonNullable<Awaited<ReturnType<typeof getSettings>>>;
+  stamp(): string;
+};
+
+// every command validates before its transaction, replays its receipt when
+// retried, advances the hybrid clock once per mutation stamp, and persists
+// receipts and clock state atomically with the mutation
+async function runCommand<Value>(
+  deps: CommandDeps,
+  commandId: CommandId,
+  work: (context: CommandContext) => Promise<DomainResult<Value>>,
+): Promise<DomainResult<Value>> {
+  if (!isUuidV4(commandId)) {
+    return err('validation', 'Command ids must be uuids.', { field: 'commandId' });
+  }
+  const now = deps.clock.nowUtcMs();
+  const timeZoneId = deps.clock.timeZoneId();
+  try {
+    return await deps.db.withExclusiveTransactionAsync(async (tx) => {
+      const receipt = await getReceipt(tx, commandId);
+      if (receipt !== null) {
+        const replayed = JSON.parse(receipt) as { ok: boolean; value?: Value };
+        if (replayed.ok && !('value' in replayed)) {
+          // json drops undefined values; restore the exact original shape
+          replayed.value = undefined;
+        }
+        return replayed as DomainResult<Value>;
+      }
+      const settings = await getSettings(tx);
+      if (!settings) {
+        return err('database', 'The database is not initialized.');
+      }
+      let hlc: HlcState = { wallTime: settings.hlcWallTime, counter: settings.hlcCounter };
+      const context: CommandContext = {
+        tx,
+        now,
+        timeZoneId,
+        settings,
+        stamp: () => {
+          hlc = advance(hlc, now);
+          return encodeStamp(hlc, settings.deviceId);
+        },
+      };
+      const result = await work(context);
+      await saveHlc(tx, hlc);
+      await insertReceipt(tx, commandId, JSON.stringify(result), now);
+      return result;
+    });
+  } catch (cause) {
+    return err('database', `The command could not be completed: ${describe(cause)}`, {
+      retryable: true,
+    });
+  }
+}
+
+function describe(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+// --- boards ------------------------------------------------------------------
+
+export type CreateBoardInput = {
+  commandId: CommandId;
+  title: string;
+  symbol: string;
+  accentHex: string;
+  usesTintedBackground: boolean;
+  tracksAmount: boolean;
+  amountUnit?: string | null;
+  quickAmount?: number;
+  tracksTime: boolean;
+  startOfDayMinute: number;
+  metricsEnabled: boolean;
+};
+
+type BoardFieldValidation = {
+  title: string;
+  symbol: string;
+  accentHex: string;
+  amountUnit: string | null;
+  quickAmount: number;
+  startOfDayMinute: number;
+};
+
+function validateBoardFields(
+  input: {
+    title: string;
+    symbol: string;
+    accentHex: string;
+    tracksAmount: boolean;
+    amountUnit?: string | null;
+    quickAmount?: number;
+    startOfDayMinute: number;
+  },
+  // updates retain the saved amount configuration when fields are omitted,
+  // so turning amount tracking off never erases unit or quick amount
+  fallback: { amountUnit: string | null; quickAmount: number } = {
+    amountUnit: null,
+    quickAmount: 1,
+  },
+): DomainResult<BoardFieldValidation> {
+  const title = validateTitle(input.title);
+  if (!title.ok) {
+    return title;
+  }
+  const symbol = validateSymbol(input.symbol);
+  if (!symbol.ok) {
+    return symbol;
+  }
+  const accent = validateAccentHex(input.accentHex);
+  if (!accent.ok) {
+    return accent;
+  }
+  const unit =
+    input.amountUnit === undefined ? ok(fallback.amountUnit) : validateUnit(input.amountUnit);
+  if (!unit.ok) {
+    return unit;
+  }
+  const quickAmountRaw = input.quickAmount ?? fallback.quickAmount;
+  const quickAmount = validateAmount(quickAmountRaw, 'quickAmount');
+  if (!quickAmount.ok) {
+    return quickAmount;
+  }
+  const startOfDay = validateStartOfDayMinute(input.startOfDayMinute);
+  if (!startOfDay.ok) {
+    return startOfDay;
+  }
+  return ok({
+    title: title.value,
+    symbol: symbol.value,
+    accentHex: accent.value,
+    amountUnit: unit.value,
+    quickAmount: quickAmount.value,
+    startOfDayMinute: startOfDay.value,
+  });
+}
+
+export function createBoard(
+  deps: CommandDeps,
+  input: CreateBoardInput,
+): Promise<DomainResult<{ boardId: BoardId }>> {
+  const fields = validateBoardFields(input);
+  if (!fields.ok) {
+    return Promise.resolve(fields);
+  }
+  return runCommand(deps, input.commandId, async ({ tx, now, timeZoneId, stamp }) => {
+    const boardId = deps.ids.uuid() as BoardId;
+    const mutationStamp = stamp();
+    const orderKey = orderKeyAfter(await lastActiveOrderKey(tx));
+    const board: Board = {
+      id: boardId,
+      title: fields.value.title,
+      symbol: fields.value.symbol,
+      accentHex: fields.value.accentHex,
+      usesTintedBackground: input.usesTintedBackground,
+      tracksAmount: input.tracksAmount,
+      amountUnit: fields.value.amountUnit,
+      quickAmount: fields.value.quickAmount,
+      tracksTime: input.tracksTime,
+      startOfDayMinute: fields.value.startOfDayMinute,
+      metricsEnabled: input.metricsEnabled,
+      orderKey,
+      archivedAt: null,
+      createdAt: now,
+      updatedAt: now,
+      mutationStamp,
+      deletedAt: null,
+    };
+    await insertBoard(tx, board);
+    const today = currentLogicalDate(now, timeZoneId, board.startOfDayMinute);
+    const periodId = await insertPeriod(tx, boardId, today, mutationStamp);
+    await appendOutbox(tx, 'board', boardId, mutationStamp, now);
+    await appendOutbox(tx, 'activity_period', String(periodId), mutationStamp, now);
+    await rebuildWidgetRows(tx, now, timeZoneId);
+    return ok({ boardId });
+  });
+}
+
+export type UpdateBoardInput = Omit<CreateBoardInput, 'commandId'> & {
+  commandId: CommandId;
+  boardId: BoardId;
+  expectedMutationStamp: string;
+};
+
+export function updateBoard(
+  deps: CommandDeps,
+  input: UpdateBoardInput,
+): Promise<DomainResult<{ mutationStamp: string }>> {
+  const fields = validateBoardFields(input);
+  if (!fields.ok) {
+    return Promise.resolve(fields);
+  }
+  return runCommand(deps, input.commandId, async ({ tx, now, timeZoneId, stamp }) => {
+    const board = await getBoardById(tx, input.boardId);
+    if (!board) {
+      return err('not_found', 'This board no longer exists.');
+    }
+    if (board.archivedAt !== null) {
+      return err('archived', 'Restore the board before editing it.');
+    }
+    if (board.mutationStamp !== input.expectedMutationStamp) {
+      return err('conflict', 'This board changed elsewhere. Review the latest values.');
+    }
+    const mutationStamp = stamp();
+    const updated: Board = {
+      ...board,
+      title: fields.value.title,
+      symbol: fields.value.symbol,
+      accentHex: fields.value.accentHex,
+      usesTintedBackground: input.usesTintedBackground,
+      tracksAmount: input.tracksAmount,
+      // omitted amount configuration retains the saved values
+      amountUnit: input.amountUnit === undefined ? board.amountUnit : fields.value.amountUnit,
+      quickAmount: input.quickAmount === undefined ? board.quickAmount : fields.value.quickAmount,
+      tracksTime: input.tracksTime,
+      startOfDayMinute: fields.value.startOfDayMinute,
+      metricsEnabled: input.metricsEnabled,
+      updatedAt: now,
+      mutationStamp,
+    };
+    await updateBoardRow(tx, updated);
+    await appendOutbox(tx, 'board', board.id, mutationStamp, now);
+    await rebuildWidgetRows(tx, now, timeZoneId);
+    return ok({ mutationStamp });
+  });
+}
+
+export type ReorderBoardInput = {
+  commandId: CommandId;
+  boardId: BoardId;
+  previousBoardId: BoardId | null;
+  nextBoardId: BoardId | null;
+};
+
+export function reorderBoard(
+  deps: CommandDeps,
+  input: ReorderBoardInput,
+): Promise<DomainResult<void>> {
+  return runCommand(deps, input.commandId, async ({ tx, now, timeZoneId, stamp }) => {
+    const board = await getBoardById(tx, input.boardId);
+    if (!board || board.archivedAt !== null) {
+      return err('not_found', 'This board is not in the active list.');
+    }
+    const previous = input.previousBoardId ? await getBoardById(tx, input.previousBoardId) : null;
+    const next = input.nextBoardId ? await getBoardById(tx, input.nextBoardId) : null;
+    if ((input.previousBoardId && !previous) || (input.nextBoardId && !next)) {
+      return err('not_found', 'A neighboring board no longer exists.');
+    }
+    const mutationStamp = stamp();
+    const orderKey = orderKeyBetween(previous?.orderKey ?? null, next?.orderKey ?? null);
+    await updateBoardRow(tx, { ...board, orderKey, updatedAt: now, mutationStamp });
+    await appendOutbox(tx, 'board', board.id, mutationStamp, now);
+    await rebuildWidgetRows(tx, now, timeZoneId);
+    return ok(undefined);
+  });
+}
+
+export function archiveBoard(
+  deps: CommandDeps,
+  input: { commandId: CommandId; boardId: BoardId },
+): Promise<DomainResult<void>> {
+  return runCommand(deps, input.commandId, async ({ tx, now, timeZoneId, stamp }) => {
+    const board = await getBoardById(tx, input.boardId);
+    if (!board) {
+      return err('not_found', 'This board no longer exists.');
+    }
+    if (board.archivedAt !== null) {
+      return err('archived', 'This board is already archived.');
+    }
+    const mutationStamp = stamp();
+    const today = currentLogicalDate(now, timeZoneId, board.startOfDayMinute);
+    await updateBoardRow(tx, { ...board, archivedAt: now, updatedAt: now, mutationStamp });
+    const closedPeriodIds = await closeOpenPeriod(tx, board.id, today, mutationStamp);
+    await tx.runAsync('DELETE FROM reminder_schedule WHERE reminder_id IN (SELECT id FROM reminders WHERE board_id = ?)', [board.id]);
+    await appendOutbox(tx, 'board', board.id, mutationStamp, now);
+    for (const periodId of closedPeriodIds) {
+      await appendOutbox(tx, 'activity_period', String(periodId), mutationStamp, now);
+    }
+    await rebuildWidgetRows(tx, now, timeZoneId);
+    return ok(undefined);
+  });
+}
+
+export function restoreBoard(
+  deps: CommandDeps,
+  input: { commandId: CommandId; boardId: BoardId },
+): Promise<DomainResult<void>> {
+  return runCommand(deps, input.commandId, async ({ tx, now, timeZoneId, stamp }) => {
+    const board = await getBoardById(tx, input.boardId);
+    if (!board) {
+      return err('not_found', 'This board no longer exists.');
+    }
+    if (board.archivedAt === null) {
+      return err('validation', 'This board is not archived.');
+    }
+    const mutationStamp = stamp();
+    const today = currentLogicalDate(now, timeZoneId, board.startOfDayMinute);
+    // restored boards go to the end of the active order
+    const orderKey = orderKeyAfter(await lastActiveOrderKey(tx));
+    await updateBoardRow(tx, {
+      ...board,
+      archivedAt: null,
+      orderKey,
+      updatedAt: now,
+      mutationStamp,
+    });
+    // same-day close and reopen merge into one period
+    const reopenedId = await reopenPeriodEndingOn(tx, board.id, today, mutationStamp);
+    const periodId = reopenedId ?? (await insertPeriod(tx, board.id, today, mutationStamp));
+    await appendOutbox(tx, 'board', board.id, mutationStamp, now);
+    await appendOutbox(tx, 'activity_period', String(periodId), mutationStamp, now);
+    await rebuildWidgetRows(tx, now, timeZoneId);
+    return ok(undefined);
+  });
+}
+
+export function deleteBoard(
+  deps: CommandDeps,
+  input: { commandId: CommandId; boardId: BoardId },
+): Promise<DomainResult<void>> {
+  return runCommand(deps, input.commandId, async ({ tx, now, timeZoneId, stamp }) => {
+    const board = await getBoardById(tx, input.boardId);
+    if (!board) {
+      return err('not_found', 'This board no longer exists.');
+    }
+    const mutationStamp = stamp();
+    const descendants = await tombstoneBoardGraph(tx, board.id, now, mutationStamp);
+    await appendOutbox(tx, 'board', board.id, mutationStamp, now);
+    // descendant tombstones must reach sync so remote replicas delete them
+    for (const checkInId of descendants.checkInIds) {
+      await appendOutbox(tx, 'check_in', checkInId, mutationStamp, now);
+    }
+    for (const reminderId of descendants.reminderIds) {
+      await appendOutbox(tx, 'reminder', reminderId, mutationStamp, now);
+    }
+    for (const periodId of descendants.periodIds) {
+      await appendOutbox(tx, 'activity_period', String(periodId), mutationStamp, now);
+    }
+    await rebuildWidgetRows(tx, now, timeZoneId);
+    return ok(undefined);
+  });
+}
+
+// --- check-ins ---------------------------------------------------------------
+
+export type CreateCheckInInput = {
+  commandId: CommandId;
+  boardId: BoardId;
+  logicalDate?: LogicalDate;
+  occurredAtUtc?: number;
+  amount?: number;
+  note?: string;
+  source: Exclude<CheckInSource, 'sync'>;
+};
+
+export function createCheckIn(
+  deps: CommandDeps,
+  input: CreateCheckInInput,
+): Promise<DomainResult<{ checkInId: CheckInId }>> {
+  const note = validateNote(input.note);
+  if (!note.ok) {
+    return Promise.resolve(note);
+  }
+  return runCommand(deps, input.commandId, async ({ tx, now, timeZoneId, stamp }) => {
+    const board = await getBoardById(tx, input.boardId);
+    if (!board) {
+      return err('not_found', 'This board no longer exists.');
+    }
+    if (board.archivedAt !== null) {
+      return err('archived', 'Restore the board to add check-ins.');
+    }
+    const today = currentLogicalDate(now, timeZoneId, board.startOfDayMinute);
+
+    let amount: number | null = null;
+    if (board.tracksAmount) {
+      const value = validateAmount(input.amount ?? board.quickAmount);
+      if (!value.ok) {
+        return value;
+      }
+      amount = value.value;
+    } else if (input.amount !== undefined) {
+      return err('validation', 'This board does not track amounts.', { field: 'amount' });
+    }
+
+    let occurredAtUtc: number | null = null;
+    let checkInZone: string | null = null;
+    let offsetMinutes: number | null = null;
+    if (board.tracksTime) {
+      occurredAtUtc = input.occurredAtUtc ?? now;
+      checkInZone = timeZoneId;
+      offsetMinutes = offsetMinutesAt(occurredAtUtc, timeZoneId);
+    }
+
+    let logicalDate: LogicalDate;
+    if (input.logicalDate !== undefined) {
+      const validated = validateLogicalDateInput(input.logicalDate, today);
+      if (!validated.ok) {
+        return validated;
+      }
+      logicalDate = validated.value;
+    } else if (occurredAtUtc !== null) {
+      const derived = currentLogicalDate(occurredAtUtc, timeZoneId, board.startOfDayMinute);
+      // a future instant must not smuggle in a future logical date
+      const validated = validateLogicalDateInput(derived, today);
+      if (!validated.ok) {
+        return validated;
+      }
+      logicalDate = validated.value;
+    } else {
+      logicalDate = today;
+    }
+
+    const mutationStamp = stamp();
+    const checkIn: CheckIn = {
+      id: deps.ids.uuid() as CheckInId,
+      boardId: board.id,
+      logicalDate,
+      occurredAtUtc,
+      timeZoneId: checkInZone,
+      offsetMinutes,
+      amount,
+      note: note.value,
+      source: input.source,
+      idempotencyKey: input.commandId,
+      createdAt: now,
+      updatedAt: now,
+      mutationStamp,
+      deletedAt: null,
+    };
+    await insertCheckIn(tx, checkIn);
+    await appendOutbox(tx, 'check_in', checkIn.id, mutationStamp, now);
+    await rebuildWidgetRows(tx, now, timeZoneId);
+    return ok({ checkInId: checkIn.id });
+  });
+}
+
+export type UpdateCheckInInput = {
+  commandId: CommandId;
+  checkInId: CheckInId;
+  expectedMutationStamp: string;
+  logicalDate: LogicalDate;
+  occurredAtUtc?: number;
+  amount?: number;
+  note?: string;
+};
+
+export function updateCheckIn(
+  deps: CommandDeps,
+  input: UpdateCheckInInput,
+): Promise<DomainResult<{ mutationStamp: string }>> {
+  const note = validateNote(input.note);
+  if (!note.ok) {
+    return Promise.resolve(note);
+  }
+  return runCommand(deps, input.commandId, async ({ tx, now, timeZoneId, stamp }) => {
+    const existing = await getCheckInById(tx, input.checkInId);
+    if (!existing) {
+      return err('not_found', 'This check-in no longer exists.');
+    }
+    if (existing.mutationStamp !== input.expectedMutationStamp) {
+      return err('conflict', 'This check-in changed elsewhere. Review the latest values.');
+    }
+    const board = await getBoardById(tx, existing.boardId);
+    if (!board) {
+      return err('not_found', 'This board no longer exists.');
+    }
+    if (board.archivedAt !== null) {
+      return err('archived', 'Restore the board to edit its check-ins.');
+    }
+    const today = currentLogicalDate(now, timeZoneId, board.startOfDayMinute);
+    const logicalDate = validateLogicalDateInput(input.logicalDate, today);
+    if (!logicalDate.ok) {
+      return logicalDate;
+    }
+    let amount: number | null = existing.amount;
+    if (input.amount !== undefined) {
+      if (!board.tracksAmount) {
+        return err('validation', 'This board does not track amounts.', { field: 'amount' });
+      }
+      const value = validateAmount(input.amount);
+      if (!value.ok) {
+        return value;
+      }
+      amount = value.value;
+    }
+    let occurredAtUtc = existing.occurredAtUtc;
+    let zone = existing.timeZoneId;
+    let offset = existing.offsetMinutes;
+    if (input.occurredAtUtc !== undefined) {
+      if (!board.tracksTime) {
+        return err('validation', 'This board does not track exact times.', {
+          field: 'occurredAtUtc',
+        });
+      }
+      occurredAtUtc = input.occurredAtUtc;
+      zone = timeZoneId;
+      offset = offsetMinutesAt(input.occurredAtUtc, timeZoneId);
+    }
+    const mutationStamp = stamp();
+    await updateCheckInRow(tx, {
+      ...existing,
+      logicalDate: logicalDate.value,
+      occurredAtUtc,
+      timeZoneId: zone,
+      offsetMinutes: offset,
+      amount,
+      note: note.value,
+      updatedAt: now,
+      mutationStamp,
+    });
+    await appendOutbox(tx, 'check_in', existing.id, mutationStamp, now);
+    await rebuildWidgetRows(tx, now, timeZoneId);
+    return ok({ mutationStamp });
+  });
+}
+
+export function removeCheckIn(
+  deps: CommandDeps,
+  input: { commandId: CommandId; checkInId: CheckInId; expectedMutationStamp?: string },
+): Promise<DomainResult<void>> {
+  return runCommand(deps, input.commandId, async ({ tx, now, timeZoneId, stamp }) => {
+    const existing = await getCheckInById(tx, input.checkInId);
+    if (!existing) {
+      return err('not_found', 'This check-in no longer exists.');
+    }
+    if (
+      input.expectedMutationStamp !== undefined &&
+      existing.mutationStamp !== input.expectedMutationStamp
+    ) {
+      return err('conflict', 'This check-in changed elsewhere. Review the latest values.');
+    }
+    const board = await getBoardById(tx, existing.boardId);
+    if (board && board.archivedAt !== null) {
+      return err('archived', 'Restore the board to delete its check-ins.');
+    }
+    const mutationStamp = stamp();
+    await updateCheckInRow(tx, { ...existing, deletedAt: now, updatedAt: now, mutationStamp });
+    await appendOutbox(tx, 'check_in', existing.id, mutationStamp, now);
+    await rebuildWidgetRows(tx, now, timeZoneId);
+    return ok(undefined);
+  });
+}
+
+// undo removes only the check-in created by the quick action it belongs to
+export function undoCreatedCheckIn(
+  deps: CommandDeps,
+  input: { commandId: CommandId; checkInId: CheckInId; createdByCommandId: CommandId },
+): Promise<DomainResult<void>> {
+  return runCommand(deps, input.commandId, async ({ tx, now, timeZoneId, stamp }) => {
+    const existing = await getCheckInById(tx, input.checkInId);
+    if (!existing) {
+      return err('not_found', 'This check-in was already removed.');
+    }
+    if (existing.idempotencyKey !== input.createdByCommandId) {
+      return err('conflict', 'Undo can only remove the check-in it belongs to.');
+    }
+    const board = await getBoardById(tx, existing.boardId);
+    if (board && board.archivedAt !== null) {
+      return err('archived', 'Restore the board to change its check-ins.');
+    }
+    const mutationStamp = stamp();
+    await updateCheckInRow(tx, { ...existing, deletedAt: now, updatedAt: now, mutationStamp });
+    await appendOutbox(tx, 'check_in', existing.id, mutationStamp, now);
+    await rebuildWidgetRows(tx, now, timeZoneId);
+    return ok(undefined);
+  });
+}
+
+// --- settings ----------------------------------------------------------------
+
+export function setSelectedIcon(
+  deps: CommandDeps,
+  input: { commandId: CommandId; icon: SelectedIcon },
+): Promise<DomainResult<void>> {
+  return runCommand(deps, input.commandId, async ({ tx }) => {
+    await saveSelectedIcon(tx, input.icon);
+    return ok(undefined);
+  });
+}
+
+export function setICloudSyncEnabled(
+  deps: CommandDeps,
+  input: { commandId: CommandId; enabled: boolean },
+): Promise<DomainResult<void>> {
+  return runCommand(deps, input.commandId, async ({ tx }) => {
+    await saveICloudSyncEnabled(tx, input.enabled);
+    return ok(undefined);
+  });
+}
+
+export function dismissMetricsEducation(
+  deps: CommandDeps,
+  input: { commandId: CommandId; boardId: BoardId },
+): Promise<DomainResult<void>> {
+  return runCommand(deps, input.commandId, async ({ tx, now, settings, stamp }) => {
+    if (!settings.metricsEducationDismissed.includes(input.boardId)) {
+      const dismissed = [...settings.metricsEducationDismissed, input.boardId];
+      await saveMetricsEducationDismissed(tx, dismissed);
+      await appendOutbox(tx, 'settings', 'app-settings', stamp(), now);
+    }
+    return ok(undefined);
+  });
+}
