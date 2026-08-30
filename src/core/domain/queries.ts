@@ -216,9 +216,10 @@ export function getBoardHeatmap(
       const days: HeatmapCell[] = [];
       for (let day = 0; day < 7; day += 1) {
         const date = addDays(cursor, day);
-        // monday alignment can extend before the requested window; those
-        // leading cells render as outside the window, not as data
-        const inWindow = compareLogicalDates(date, rawStart) >= 0;
+        // monday alignment can extend beyond the requested window on both
+        // sides; those cells render as outside the window, not as data
+        const inWindow =
+          compareLogicalDates(date, rawStart) >= 0 && compareLogicalDates(date, end) <= 0;
         const count = inWindow ? (counts.get(date) ?? 0) : 0;
         const isFuture = compareLogicalDates(date, today) > 0;
         days.push({

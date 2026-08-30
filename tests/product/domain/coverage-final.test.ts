@@ -111,6 +111,12 @@ describe('final branch coverage', () => {
     expect(gapCell?.eligible).toBe(false);
     const closedPeriodCell = cells.find((cell) => cell.date === '2026-08-30');
     expect(closedPeriodCell?.eligible).toBe(true);
+    // iso alignment extends the final week past the requested end; those
+    // trailing cells are out of the window, never rendered as empty data
+    const trailingCell = cells.find((cell) => cell.date === '2026-09-05');
+    expect(trailingCell).toBeDefined();
+    expect(trailingCell?.eligible).toBe(false);
+    expect(trailingCell?.intensity).toBe('empty');
     await harness.db.closeAsync();
   });
 
