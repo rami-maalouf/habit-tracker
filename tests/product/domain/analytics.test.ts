@@ -91,10 +91,13 @@ describe('consistency and eligibility', () => {
   });
 
   it('bands on the rounded percent with half away from zero', () => {
+    // raw thresholds: rounding is presentation-only and never reclassifies
     expect(consistencyBand(39.4)).toBe('low');
-    expect(consistencyBand(39.5)).toBe('average');
+    expect(consistencyBand(39.5)).toBe('low');
+    expect(consistencyBand(40)).toBe('average');
     expect(consistencyBand(74.4)).toBe('average');
-    expect(consistencyBand(74.5)).toBe('high');
+    expect(consistencyBand(74.5)).toBe('average');
+    expect(consistencyBand(75)).toBe('high');
     expect(consistencyBand(100)).toBe('high');
     expect(roundHalfAwayFromZero(0)).toBe(0);
     expect(roundHalfAwayFromZero(-2.5)).toBe(-3);

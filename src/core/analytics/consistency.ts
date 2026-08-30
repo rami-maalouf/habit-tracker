@@ -35,13 +35,13 @@ export function consistencyPercent(
   };
 }
 
-// bands: low < 40, average 40..74, high 75..100 (on the rounded percent)
+// bands classify the RAW percent (low < 40, average < 75, high otherwise);
+// rounding happens only at presentation, never before classification
 export function consistencyBand(percent: number): ConsistencyBand {
-  const rounded = roundHalfAwayFromZero(percent);
-  if (rounded < 40) {
+  if (percent < 40) {
     return 'low';
   }
-  if (rounded < 75) {
+  if (percent < 75) {
     return 'average';
   }
   return 'high';
