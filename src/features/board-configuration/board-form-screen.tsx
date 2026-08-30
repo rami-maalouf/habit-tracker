@@ -37,8 +37,11 @@ function draftToCommandFields(draft: BoardDraft) {
     accentHex: draft.accentHex,
     usesTintedBackground: draft.usesTintedBackground,
     tracksAmount: draft.tracksAmount,
-    amountUnit: draft.amountUnit.trim().length === 0 ? null : draft.amountUnit,
-    quickAmount: parseQuickAmount(draft.quickAmountText) ?? -1,
+    // with amounts off, stale hidden field text must not block the save;
+    // the neutral defaults are what a fresh board carries
+    amountUnit:
+      draft.tracksAmount && draft.amountUnit.trim().length > 0 ? draft.amountUnit : null,
+    quickAmount: draft.tracksAmount ? (parseQuickAmount(draft.quickAmountText) ?? -1) : 1,
     tracksTime: draft.tracksTime,
     startOfDayMinute: draft.startOfDayMinute,
     metricsEnabled: draft.metricsEnabled,
@@ -125,7 +128,9 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reseed only when the loaded record identity changes
-  }, [boardId, existing.status === 'ready' ? existing.value?.mutationStamp : null]);
+    // '?? null' keeps the dependency stable across the create query's
+    // loading-to-ready flip, so the fresh draft is not reseeded mid-typing
+  }, [boardId, existing.status === 'ready' ? (existing.value?.mutationStamp ?? null) : null]);
 
   // the draft session ends with the sheet, so a later direct navigation to
   // an options route cannot observe a stale draft as live
