@@ -1,0 +1,149 @@
+{
+  "contractVersion": 1,
+  "description": "Shared automation contract fixtures. Every executor - the TypeScript one in src/core/automations/contract.ts, the future iOS AppIntents executor, and the future Android App Actions executor - must produce these outcomes from the same seeded store. The native executors read this file verbatim.",
+  "seed": {
+    "timeZoneId": "America/New_York",
+    "nowUtcMs": 1788105600000,
+    "boards": [
+      {
+        "id": "00000000-0000-4000-8000-00000000a001",
+        "title": "morning pages",
+        "tracksAmount": false,
+        "tracksTime": false,
+        "startOfDayMinute": 0,
+        "quickAmount": 1,
+        "archived": false
+      },
+      {
+        "id": "00000000-0000-4000-8000-00000000a002",
+        "title": "water",
+        "tracksAmount": true,
+        "amountUnit": "glasses",
+        "quickAmount": 2,
+        "tracksTime": false,
+        "startOfDayMinute": 0,
+        "archived": false
+      },
+      {
+        "id": "00000000-0000-4000-8000-00000000a003",
+        "title": "retired habit",
+        "tracksAmount": false,
+        "tracksTime": false,
+        "startOfDayMinute": 0,
+        "quickAmount": 1,
+        "archived": true
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "board entity lists active boards in active order",
+      "intent": "listBoards",
+      "input": {},
+      "expect": {
+        "ok": true,
+        "boards": ["morning pages", "water"]
+      }
+    },
+    {
+      "name": "check in defaults the date to the board's logical today",
+      "intent": "checkIn",
+      "input": { "boardId": "00000000-0000-4000-8000-00000000a001" },
+      "expect": { "ok": true, "logicalDate": "2026-08-30" }
+    },
+    {
+      "name": "check in on an amount board without an amount uses quickAmount",
+      "intent": "checkIn",
+      "input": { "boardId": "00000000-0000-4000-8000-00000000a002" },
+      "expect": { "ok": true, "amount": 2 }
+    },
+    {
+      "name": "check in honors an explicit amount and past date",
+      "intent": "checkIn",
+      "input": {
+        "boardId": "00000000-0000-4000-8000-00000000a002",
+        "amount": 5,
+        "logicalDate": "2026-08-28"
+      },
+      "expect": { "ok": true, "amount": 5, "logicalDate": "2026-08-28" }
+    },
+    {
+      "name": "check in rejects an archived board with an actionable result",
+      "intent": "checkIn",
+      "input": { "boardId": "00000000-0000-4000-8000-00000000a003" },
+      "expect": { "ok": false, "code": "archived" }
+    },
+    {
+      "name": "check in rejects an unknown board",
+      "intent": "checkIn",
+      "input": { "boardId": "00000000-0000-4000-8000-00000000dead" },
+      "expect": { "ok": false, "code": "not_found" }
+    },
+    {
+      "name": "check in rejects a future date",
+      "intent": "checkIn",
+      "input": {
+        "boardId": "00000000-0000-4000-8000-00000000a001",
+        "logicalDate": "2026-09-30"
+      },
+      "expect": { "ok": false, "code": "validation" }
+    },
+    {
+      "name": "remove latest returns not found without mutating when none exists",
+      "intent": "removeLatest",
+      "input": { "boardId": "00000000-0000-4000-8000-00000000a001" },
+      "expect": { "ok": false, "code": "not_found" }
+    },
+    {
+      "name": "remove latest removes the newest record for the day",
+      "intent": "removeLatest",
+      "input": { "boardId": "00000000-0000-4000-8000-00000000a001" },
+      "given": [
+        { "intent": "checkIn", "input": { "boardId": "00000000-0000-4000-8000-00000000a001" } },
+        { "intent": "checkIn", "input": { "boardId": "00000000-0000-4000-8000-00000000a001" } }
+      ],
+      "expect": { "ok": true, "remainingToday": 1 }
+    },
+    {
+      "name": "remove latest rejects an archived board",
+      "intent": "removeLatest",
+      "input": { "boardId": "00000000-0000-4000-8000-00000000a003" },
+      "expect": { "ok": false, "code": "archived" }
+    },
+    {
+      "name": "today's check-ins returns counts and names, never notes",
+      "intent": "today",
+      "input": {},
+      "given": [
+        {
+          "intent": "checkIn",
+          "input": {
+            "boardId": "00000000-0000-4000-8000-00000000a001",
+            "note": "private thought"
+          }
+        }
+      ],
+      "expect": {
+        "ok": true,
+        "total": 1,
+        "boards": [
+          { "title": "morning pages", "count": 1 },
+          { "title": "water", "count": 0 }
+        ],
+        "excludesNoteText": true
+      }
+    },
+    {
+      "name": "today's check-ins can scope to one board",
+      "intent": "today",
+      "input": { "boardId": "00000000-0000-4000-8000-00000000a002" },
+      "expect": { "ok": true, "boards": [{ "title": "water", "count": 0 }] }
+    },
+    {
+      "name": "a retried intent reuses its command id and records once",
+      "intent": "checkIn",
+      "input": { "boardId": "00000000-0000-4000-8000-00000000a001", "replayCommandId": true },
+      "expect": { "ok": true, "recordedCount": 1 }
+    }
+  ]
+}
