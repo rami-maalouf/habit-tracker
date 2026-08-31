@@ -3,12 +3,14 @@ import { useColorScheme } from 'react-native';
 
 import { ProductProvider } from '@/features/product-store';
 
-// every modal surface is a form sheet at the full detent with a visible
-// grabber, matching the reference app's sheet presentation
+// every modal surface presents as a native page sheet (slide-up card with
+// drag-to-dismiss). the formSheet presentation was abandoned after it
+// intermittently committed react content into a hidden native sheet when
+// one sheet opened while another was still dismissing (verified on device:
+// the react tree stayed fully mounted while the pixels and accessibility
+// tree were empty until a js reload)
 const sheet = {
-  presentation: 'formSheet' as const,
-  sheetGrabberVisible: true,
-  sheetAllowedDetents: [1.0],
+  presentation: 'modal' as const,
 };
 
 export default function RootLayout() {
