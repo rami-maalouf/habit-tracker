@@ -98,7 +98,7 @@ export function BoardCard({
         </View>
       ) : (
         <>
-          <SevenDayStrip strip={card.strip} colors={colors} />
+          <SevenDayStrip strip={card.stripData} colors={colors} />
           <ProductPressable
             onPress={onQuickCheckIn}
             disabled={quickPending || !onQuickCheckIn}
