@@ -77,6 +77,16 @@ function emit(): void {
   }
 }
 
+let ownerSequence = 0;
+
+// owner tokens must be unique per MOUNT: react's useId repeats across
+// remounts in the same tree position, so a dismissed sheet's delayed
+// cleanup could kill its successor's session
+export function newDraftOwner(): string {
+  ownerSequence += 1;
+  return `draft-owner-${ownerSequence}`;
+}
+
 export function startDraft(draft: BoardDraft, owner: string): void {
   current = { draft, active: true, owner };
   emit();

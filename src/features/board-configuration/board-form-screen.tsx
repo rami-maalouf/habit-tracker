@@ -1,6 +1,6 @@
 import { Stack, useNavigation, useRouter } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, ScrollView, Switch, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
@@ -20,6 +20,7 @@ import {
   draftFromBoard,
   endDraft,
   newBoardDraft,
+  newDraftOwner,
   startDraft,
   updateDraft,
   useDraftState,
@@ -114,8 +115,9 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
   // set before a deliberate exit (save, archive, delete, confirmed discard)
   // so the removal guard lets that navigation through
   const skipGuardRef = useRef(false);
-  // identifies this sheet instance as the draft session owner
-  const ownerId = useId();
+  // identifies this sheet instance as the draft session owner; a fresh
+  // token per mount, never reused by a successor sheet
+  const [ownerId] = useState(newDraftOwner);
 
   // seed the shared draft store when the sheet opens or reloads; '?? null'
   // keeps the stamp stable across the create query's loading-to-ready flip
