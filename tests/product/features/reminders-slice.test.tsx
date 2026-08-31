@@ -453,3 +453,110 @@ describe('notification settings states', () => {
     );
   });
 });
+
+describe('sol reminder remediation - ui and wiring', () => {
+  beforeEach(() => {
+    resetProductCoreForTests();
+    notificationsPlatformMock.reset();
+    alertSpy.mockClear();
+  });
+
+  it('cancels schedules right after an archive, without a foreground event', async () => {
+    const boardId = await seedBoard('archive me');
+    await seedReminder(boardId, { weekdaysMask: 0b0000001 });
+    expect(notificationsPlatformMock.pending.size).toBe(1);
+    renderRouter('src/app', { initialUrl: `/boards/${boardId}/edit` });
+    await screen.findByTestId('archive-board');
+    alertSpy.mockImplementationOnce((_title, _message, buttons) => {
+      buttons?.find((button) => button.text === 'Archive')?.onPress?.();
+    });
+    await press('archive-board');
+    await settle();
+    await settle();
+    // the invalidation-driven reconcile suspended the schedule
+    expect(notificationsPlatformMock.pending.size).toBe(0);
+  });
+
+  it('explains a denied schedule when a drafted reminder commits with a new board', async () => {
+    notificationsPlatformMock.auth = 'undetermined';
+    notificationsPlatformMock.promptResult = 'denied';
+    renderRouter('src/app', { initialUrl: '/' });
+    await screen.findByTestId('create-board');
+    await press('create-board');
+    await screen.findByTestId('add-reminder-row');
+    fireEvent.changeText(screen.getByLabelText('Board name'), 'denied board');
+    await press('add-reminder-row');
+    await screen.findByTestId('reminder-save');
+    await press('reminder-save');
+    await screen.findByTestId('draft-reminder-0');
+    await press('board-form-save');
+    await settle();
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Notifications are off',
+      expect.stringContaining('Allow notifications in Settings'),
+    );
+  });
+
+  it('surfaces an open-settings failure inline', async () => {
+    const { notificationsMock } = jest.requireActual<{
+      notificationsMock: { granted: boolean; canAskAgain: boolean; reject: boolean };
+    }>('../../../src/testing/expo-notifications.mock');
+    notificationsMock.granted = false;
+    notificationsMock.canAskAgain = false;
+    const { Linking } = jest.requireActual<typeof import('react-native')>('react-native');
+    const openSpy = jest
+      .spyOn(Linking, 'openSettings')
+      .mockRejectedValueOnce(new Error('unavailable'));
+    renderRouter('src/app', { initialUrl: '/settings/notifications' });
+    await screen.findByTestId('notifications-open-settings');
+    await press('notifications-open-settings');
+    expect(await screen.findByTestId('notifications-settings-error')).toHaveTextContent(
+      /Settings could not be opened/,
+    );
+    openSpy.mockRestore();
+    notificationsMock.granted = false;
+    notificationsMock.canAskAgain = true;
+  });
+});
+
+describe('notification settings edge labels', () => {
+  beforeEach(() => {
+    resetProductCoreForTests();
+    notificationsPlatformMock.reset();
+    alertSpy.mockClear();
+  });
+
+  it('surfaces a failed swipe delete inline in history', async () => {
+    const boardId = await seedBoard('history board');
+    const opened = await getProductCore();
+    if (!opened.ok) {
+      throw new Error('core failed');
+    }
+    const { createCheckIn, removeCheckIn } = jest.requireActual<
+      typeof import('@/core/domain/commands')
+    >('@/core/domain/commands');
+    const created = await createCheckIn(opened.value, {
+      commandId: newCommandId(),
+      boardId,
+      source: 'app',
+    });
+    if (!created.ok) {
+      throw new Error(created.error.message);
+    }
+    renderRouter('src/app', { initialUrl: `/boards/${boardId}/check-ins` });
+    await screen.findByTestId('swipe-delete-0');
+    // the record vanishes behind the open list; the swipe delete must
+    // surface the failure instead of swallowing it
+    const removed = await removeCheckIn(opened.value, {
+      commandId: newCommandId(),
+      checkInId: created.value.checkInId,
+    });
+    if (!removed.ok) {
+      throw new Error(removed.error.message);
+    }
+    await press('swipe-delete-0');
+    expect(await screen.findByTestId('history-delete-error')).toHaveTextContent(
+      /no longer exists/,
+    );
+  });
+});

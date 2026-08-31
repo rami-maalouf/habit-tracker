@@ -15,3 +15,20 @@ export async function getPermissionsAsync() {
     status: notificationsMock.granted ? 'granted' : 'undetermined',
   };
 }
+
+export function setNotificationHandler(): void {}
+
+export function clearLastNotificationResponse(): void {}
+
+export async function getLastNotificationResponseAsync() {
+  return null;
+}
+
+export async function requestPermissionsAsync() {
+  notificationsMock.granted = true;
+  return { granted: true, canAskAgain: true, status: 'granted' };
+}
+
+export function addNotificationResponseReceivedListener() {
+  return { remove: () => {} };
+}

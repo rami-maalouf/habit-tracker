@@ -989,6 +989,7 @@ export function importSnapshot(
         // rules and enabled state restore; the schedule itself is rebuilt
         // by the reminder reconciler after the import
         enabled: draft.enabled,
+        nativeIdentifiers: [],
         scheduleState: 'idle',
         lastScheduleError: null,
         createdAt: Math.min(draft.createdAtUtc, now),

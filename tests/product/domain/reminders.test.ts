@@ -802,3 +802,288 @@ describe('reminder defensive edges', () => {
     expect(count).toBe(0);
   });
 });
+
+describe('sol reminder remediation', () => {
+  it('checks the target before consuming the just-in-time prompt', async () => {
+    const { harness, scheduler, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    await archiveBoard(harness.deps, { commandId: harness.ids.nextCommandId(), boardId });
+    scheduler.auth = 'undetermined';
+    const created = await createReminder(deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+      weekdaysMask: MONDAY,
+      minuteOfDay: 480,
+      enabled: true,
+    });
+    expect(!created.ok && created.error.code).toBe('archived');
+    // the one system prompt was never spent on a rejected save
+    expect(scheduler.prompts).toBe(0);
+    const missingToggle = await setReminderEnabled(deps, {
+      commandId: harness.ids.nextCommandId(),
+      reminderId: '00000000-0000-4000-8000-00000000e0e2' as ReminderId,
+      enabled: true,
+    });
+    expect(!missingToggle.ok && missingToggle.error.code).toBe('not_found');
+    expect(scheduler.prompts).toBe(0);
+    await harness.db.closeAsync();
+  });
+
+  it('preserves an edit under revoked authorization disabled and denied', async () => {
+    const { harness, scheduler, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    const created = await createReminder(deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+      weekdaysMask: MONDAY,
+      minuteOfDay: 480,
+      enabled: true,
+    });
+    const reminderId = firstReminderId(created as never);
+    const record = await getReminder(harness.deps, reminderId);
+    if (!record.ok || record.value === null) {
+      throw new Error('reminder missing');
+    }
+    scheduler.auth = 'denied';
+    const updated = await updateReminder(deps, {
+      commandId: harness.ids.nextCommandId(),
+      reminderId,
+      expectedMutationStamp: record.value.mutationStamp,
+      weekdaysMask: MONDAY_WEDNESDAY,
+      minuteOfDay: 600,
+    });
+    expect(updated.ok && updated.value.scheduleState).toBe('denied');
+    const after = await getReminder(harness.deps, reminderId);
+    expect(after.ok && after.value?.enabled).toBe(false);
+    expect(scheduler.pending.size).toBe(0);
+    await harness.db.closeAsync();
+  });
+
+  it('keeps a successful replacement when cancelling the old requests fails', async () => {
+    const { harness, scheduler, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    const created = await createReminder(deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+      weekdaysMask: MONDAY,
+      minuteOfDay: 480,
+      enabled: true,
+    });
+    const reminderId = firstReminderId(created as never);
+    const record = await getReminder(harness.deps, reminderId);
+    if (!record.ok || record.value === null) {
+      throw new Error('reminder missing');
+    }
+    scheduler.failNextCancels = 1;
+    const updated = await updateReminder(deps, {
+      commandId: harness.ids.nextCommandId(),
+      reminderId,
+      expectedMutationStamp: record.value.mutationStamp,
+      weekdaysMask: MONDAY,
+      minuteOfDay: 600,
+    });
+    expect(updated.ok && updated.value.scheduleState).toBe('scheduled');
+    const after = await getReminder(harness.deps, reminderId);
+    if (!after.ok || after.value === null) {
+      throw new Error('reminder missing');
+    }
+    // the rows track the new request; the uncancelled old one is now an
+    // untracked orphan for the reconciler
+    expect(after.value.nativeIdentifiers).toEqual(['native-2']);
+    const reconciled = await reconcileReminderSchedules(deps, {
+      commandId: harness.ids.nextCommandId(),
+    });
+    expect(reconciled.ok && reconciled.value.updated).toBeGreaterThan(0);
+    expect(scheduler.pending.size).toBe(1);
+    expect([...scheduler.pending.keys()]).toEqual(['native-2']);
+    await harness.db.closeAsync();
+  });
+
+  it('sweeps pending requests no schedule row claims', async () => {
+    const { harness, scheduler, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    await createReminder(deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+      weekdaysMask: MONDAY,
+      minuteOfDay: 480,
+      enabled: true,
+    });
+    // a crash leftover the schedule table never recorded
+    scheduler.pending.set('native-stray', {
+      reminderId: 'gone',
+      boardId: 'gone',
+      weekday: 1,
+      minuteOfDay: 0,
+      title: 'stray',
+      body: 'stray',
+    });
+    const result = await reconcileReminderSchedules(deps, {
+      commandId: harness.ids.nextCommandId(),
+    });
+    expect(result.ok && result.value.updated).toBeGreaterThan(0);
+    expect(scheduler.pending.has('native-stray')).toBe(false);
+    expect(scheduler.pending.size).toBe(1);
+    await harness.db.closeAsync();
+  });
+
+  it('marks an unauthorized enabled reminder denied instead of leaving it idle', async () => {
+    const { harness, scheduler, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    // an imported enabled reminder arrives idle with no schedule
+    const imported = await createReminder(deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+      weekdaysMask: MONDAY,
+      minuteOfDay: 480,
+      enabled: true,
+    });
+    const reminderId = firstReminderId(imported as never);
+    await harness.db.runAsync(
+      `UPDATE reminders SET schedule_state = 'idle' WHERE id = ?`,
+      [reminderId],
+    );
+    await harness.db.runAsync(`DELETE FROM reminder_schedule WHERE reminder_id = ?`, [reminderId]);
+    scheduler.pending.clear();
+    scheduler.auth = 'denied';
+    const result = await reconcileReminderSchedules(deps, {
+      commandId: harness.ids.nextCommandId(),
+    });
+    expect(result.ok && result.value.updated).toBe(1);
+    const record = await getReminder(harness.deps, reminderId);
+    expect(record.ok && record.value?.scheduleState).toBe('denied');
+    expect(record.ok && record.value?.enabled).toBe(true);
+    await harness.db.closeAsync();
+  });
+
+  it('does not report an unchanged persistent error as an update', async () => {
+    const { harness, scheduler, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    scheduler.capacity = 0;
+    await createReminder(deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+      weekdaysMask: MONDAY,
+      minuteOfDay: 480,
+      enabled: true,
+    });
+    // the first reconcile retries and lands on the same capacity error;
+    // reporting it as an update would loop invalidation-driven reconciles
+    const first = await reconcileReminderSchedules(deps, {
+      commandId: harness.ids.nextCommandId(),
+    });
+    expect(first.ok && first.value.updated).toBe(0);
+    await harness.db.closeAsync();
+  });
+
+  it('hydrates adapter-owned native identifiers on reminder records', async () => {
+    const { harness, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    const created = await createReminder(deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+      weekdaysMask: MONDAY_WEDNESDAY,
+      minuteOfDay: 480,
+      enabled: true,
+    });
+    const reminderId = firstReminderId(created as never);
+    const record = await getReminder(harness.deps, reminderId);
+    expect(record.ok && record.value?.nativeIdentifiers).toEqual(['native-1', 'native-2']);
+    const listed = await listBoardReminders(harness.deps, boardId);
+    expect(listed.ok && listed.value[0].nativeIdentifiers).toHaveLength(2);
+    await harness.db.closeAsync();
+  });
+});
+
+describe('preflight race re-checks', () => {
+  it('still rejects when the board changes between preflight and transaction', async () => {
+    const { harness, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+
+    // the preflight sees the live board; the exclusive transaction then
+    // observes a concurrent archive or delete and must still reject
+    const raceDb = (mutation: string) => {
+      const wrapped = Object.create(harness.db) as typeof harness.db;
+      wrapped.withExclusiveTransactionAsync = (work) =>
+        harness.db.withExclusiveTransactionAsync(async (tx) => {
+          await tx.runAsync(mutation, [boardId]);
+          return work(tx);
+        });
+      return wrapped;
+    };
+
+    const archivedRace = await createReminder(
+      { ...deps, db: raceDb('UPDATE boards SET archived_at = 1 WHERE id = ?') },
+      {
+        commandId: harness.ids.nextCommandId(),
+        boardId,
+        weekdaysMask: MONDAY,
+        minuteOfDay: 480,
+        enabled: false,
+      },
+    );
+    expect(!archivedRace.ok && archivedRace.error.code).toBe('archived');
+    await harness.db.runAsync('UPDATE boards SET archived_at = NULL WHERE id = ?', [boardId]);
+
+    const deletedRace = await createReminder(
+      { ...deps, db: raceDb('UPDATE boards SET deleted_at = 1 WHERE id = ?') },
+      {
+        commandId: harness.ids.nextCommandId(),
+        boardId,
+        weekdaysMask: MONDAY,
+        minuteOfDay: 480,
+        enabled: false,
+      },
+    );
+    expect(!deletedRace.ok && deletedRace.error.code).toBe('not_found');
+    await harness.db.runAsync('UPDATE boards SET deleted_at = NULL WHERE id = ?', [boardId]);
+    await harness.db.closeAsync();
+  });
+
+  it('still rejects a toggle when the records change inside the transaction', async () => {
+    const { harness, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    const created = await createReminder(deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+      weekdaysMask: MONDAY,
+      minuteOfDay: 480,
+      enabled: false,
+    });
+    const reminderId = firstReminderId(created as never);
+
+    const raceDb = (mutation: string, param: string) => {
+      const wrapped = Object.create(harness.db) as typeof harness.db;
+      wrapped.withExclusiveTransactionAsync = (work) =>
+        harness.db.withExclusiveTransactionAsync(async (tx) => {
+          await tx.runAsync(mutation, [param]);
+          return work(tx);
+        });
+      return wrapped;
+    };
+
+    const reminderGone = await setReminderEnabled(
+      {
+        ...deps,
+        db: raceDb('UPDATE reminders SET deleted_at = 1 WHERE id = ?', reminderId),
+      },
+      { commandId: harness.ids.nextCommandId(), reminderId, enabled: false },
+    );
+    expect(!reminderGone.ok && reminderGone.error.code).toBe('not_found');
+    await harness.db.runAsync('UPDATE reminders SET deleted_at = NULL WHERE id = ?', [reminderId]);
+
+    const boardGone = await setReminderEnabled(
+      { ...deps, db: raceDb('UPDATE boards SET deleted_at = 1 WHERE id = ?', boardId) },
+      { commandId: harness.ids.nextCommandId(), reminderId, enabled: false },
+    );
+    expect(!boardGone.ok && boardGone.error.code).toBe('not_found');
+    await harness.db.runAsync('UPDATE boards SET deleted_at = NULL WHERE id = ?', [boardId]);
+
+    const boardArchived = await setReminderEnabled(
+      { ...deps, db: raceDb('UPDATE boards SET archived_at = 1 WHERE id = ?', boardId) },
+      { commandId: harness.ids.nextCommandId(), reminderId, enabled: false },
+    );
+    expect(!boardArchived.ok && boardArchived.error.code).toBe('archived');
+    await harness.db.closeAsync();
+  });
+});

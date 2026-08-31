@@ -17,7 +17,7 @@ type ReminderRow = {
   deleted_at: number | null;
 };
 
-function toReminder(row: ReminderRow): Reminder {
+function toReminder(row: ReminderRow & { native_identifiers?: string | null }): Reminder {
   return {
     id: row.id as ReminderId,
     boardId: row.board_id as BoardId,
@@ -25,6 +25,11 @@ function toReminder(row: ReminderRow): Reminder {
     minuteOfDay: row.minute_of_day,
     message: row.message,
     enabled: row.enabled === 1,
+    // adapter-owned identifiers hydrate from the schedule table
+    nativeIdentifiers:
+      row.native_identifiers === null || row.native_identifiers === undefined
+        ? []
+        : row.native_identifiers.split('\u0001'),
     scheduleState: row.schedule_state as ReminderScheduleState,
     lastScheduleError: row.last_schedule_error,
     createdAt: row.created_at,
@@ -36,6 +41,16 @@ function toReminder(row: ReminderRow): Reminder {
 
 const REMINDER_COLUMNS = `id, board_id, weekdays_mask, minute_of_day, message, enabled,
   schedule_state, last_schedule_error, created_at, updated_at, mutation_stamp, deleted_at`;
+
+// group-concat of the schedule table's identifiers, hydrating the entity's
+// adapter-owned nativeIdentifiers field
+const REMINDER_SELECT = `SELECT r.id, r.board_id, r.weekdays_mask, r.minute_of_day, r.message,
+  r.enabled, r.schedule_state, r.last_schedule_error, r.created_at, r.updated_at,
+  r.mutation_stamp, r.deleted_at,
+  (SELECT GROUP_CONCAT(s.native_identifier, char(1))
+     FROM reminder_schedule s WHERE s.reminder_id = r.id
+     ORDER BY s.weekday) AS native_identifiers
+  FROM reminders r`;
 
 export async function insertReminder(tx: SqlExecutor, reminder: Reminder): Promise<void> {
   await tx.runAsync(
@@ -94,8 +109,8 @@ export async function getReminderById(
   tx: SqlExecutor,
   reminderId: ReminderId,
 ): Promise<Reminder | null> {
-  const row = await tx.getFirstAsync<ReminderRow>(
-    `SELECT ${REMINDER_COLUMNS} FROM reminders WHERE id = ? AND deleted_at IS NULL`,
+  const row = await tx.getFirstAsync<ReminderRow & { native_identifiers: string | null }>(
+    `${REMINDER_SELECT} WHERE r.id = ? AND r.deleted_at IS NULL`,
     [reminderId],
   );
   return row ? toReminder(row) : null;
@@ -105,10 +120,9 @@ export async function listBoardReminders(
   tx: SqlExecutor,
   boardId: BoardId,
 ): Promise<Reminder[]> {
-  const rows = await tx.getAllAsync<ReminderRow>(
-    `SELECT ${REMINDER_COLUMNS} FROM reminders
-     WHERE board_id = ? AND deleted_at IS NULL
-     ORDER BY minute_of_day, id`,
+  const rows = await tx.getAllAsync<ReminderRow & { native_identifiers: string | null }>(
+    `${REMINDER_SELECT} WHERE r.board_id = ? AND r.deleted_at IS NULL
+     ORDER BY r.minute_of_day, r.id`,
     [boardId],
   );
   return rows.map(toReminder);
@@ -119,12 +133,17 @@ export async function listBoardReminders(
 export async function listRemindersForReconcile(
   tx: SqlExecutor,
 ): Promise<{ reminder: Reminder; boardTitle: string; boardArchived: boolean }[]> {
-  const rows = await tx.getAllAsync<ReminderRow & { board_title: string; board_archived: number }>(
+  const rows = await tx.getAllAsync<
+    ReminderRow & { board_title: string; board_archived: number; native_identifiers: string | null }
+  >(
     `SELECT r.id, r.board_id, r.weekdays_mask, r.minute_of_day, r.message, r.enabled,
             r.schedule_state, r.last_schedule_error, r.created_at, r.updated_at,
             r.mutation_stamp, r.deleted_at,
             b.title AS board_title,
-            CASE WHEN b.archived_at IS NULL THEN 0 ELSE 1 END AS board_archived
+            CASE WHEN b.archived_at IS NULL THEN 0 ELSE 1 END AS board_archived,
+            (SELECT GROUP_CONCAT(s.native_identifier, char(1))
+               FROM reminder_schedule s WHERE s.reminder_id = r.id
+               ORDER BY s.weekday) AS native_identifiers
      FROM reminders r
      JOIN boards b ON b.id = r.board_id
      WHERE r.deleted_at IS NULL AND b.deleted_at IS NULL

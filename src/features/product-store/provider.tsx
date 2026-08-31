@@ -16,6 +16,7 @@ import {
   reminderScheduler,
 } from '@/platform/notifications';
 import { addWidgetQuickActionListener, refreshWidgets } from '@/platform/widgets';
+import { nextWidgetRefreshUtc } from '@/features/widgets/widget-props';
 import { spacing } from '@/theme';
 
 type ProductContextValue = {
@@ -99,9 +100,39 @@ export function ProductProvider({ children, coreOverride }: ProductProviderProps
     });
   }, [invalidate, state]);
 
+  // reruns on cold start and after every mutation (archive, restore,
+  // delete, import), not only on foreground transitions
   useEffect(() => {
     reconcile();
-  }, [reconcile]);
+  }, [reconcile, version]);
+
+  // ios exposes no js significant-time-change event; a timer at the next
+  // local day boundary covers the date rolling over while the app runs,
+  // and the foreground listener covers everything else
+  useEffect(() => {
+    if (state.status !== 'ready') {
+      return;
+    }
+    const clock = state.core.clock;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const arm = () => {
+      const delay = Math.max(
+        1000,
+        nextWidgetRefreshUtc(clock.nowUtcMs(), clock.timeZoneId()) - clock.nowUtcMs(),
+      );
+      timer = setTimeout(() => {
+        invalidate();
+        reconcile();
+        arm();
+      }, delay);
+    };
+    arm();
+    return () => {
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+    };
+  }, [invalidate, reconcile, state]);
 
   // out-of-process writers (widgets, automations, sync) mutate the same
   // database; returning to the foreground refreshes every mounted query.

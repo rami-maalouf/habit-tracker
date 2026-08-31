@@ -26,6 +26,9 @@ export interface ReminderScheduler {
   authorization(): Promise<ReminderAuthorization>;
   requestAuthorization(): Promise<ReminderAuthorization>;
   remainingCapacity(): Promise<number>;
+  // identifiers of every pending native request, so the reconciler can
+  // detect untracked orphans and duplicates after a crash
+  pendingIdentifiers(): Promise<string[]>;
   schedule(request: ReminderScheduleRequest): Promise<string>;
   cancel(identifiers: string[]): Promise<void>;
 }

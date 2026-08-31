@@ -9,6 +9,17 @@ import type {
 // ios caps the pending local-notification pool at 64 requests
 const IOS_PENDING_LIMIT = 64;
 
+// without a handler expo suppresses notifications that fire while the app
+// is foregrounded; reminders must still present as banners
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
 function toAuthorization(status: Notifications.NotificationPermissionsStatus): ReminderAuthorization {
   if (status.granted) {
     return 'granted';
@@ -38,6 +49,11 @@ export const reminderScheduler: ReminderScheduler = {
   async remainingCapacity(): Promise<number> {
     const pending = await Notifications.getAllScheduledNotificationsAsync();
     return IOS_PENDING_LIMIT - pending.length;
+  },
+
+  async pendingIdentifiers(): Promise<string[]> {
+    const pending = await Notifications.getAllScheduledNotificationsAsync();
+    return pending.map((request) => request.identifier);
   },
 
   async schedule(request: ReminderScheduleRequest): Promise<string> {
@@ -90,8 +106,13 @@ export function addNotificationTapListener(handler: (boardId: string) => void): 
   return () => subscription.remove();
 }
 
-// a tap that cold-started the app is delivered once on launch
+// a tap that cold-started the app is delivered once on launch; consuming
+// it clears the stored response so a provider remount cannot replay it
 export async function getInitialNotificationBoardId(): Promise<string | null> {
   const response = await Notifications.getLastNotificationResponseAsync();
-  return response ? boardIdFromNotificationResponse(response) : null;
+  if (!response) {
+    return null;
+  }
+  Notifications.clearLastNotificationResponse();
+  return boardIdFromNotificationResponse(response);
 }

@@ -262,8 +262,10 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
       // validated by the reminder editor before it entered the session
       if (!editing && draft.reminders.length > 0) {
         const createdBoardId = (result.value as { boardId: BoardId }).boardId;
+        let denied = false;
+        const failures: string[] = [];
         for (const entry of draft.reminders) {
-          await createReminder(
+          const reminderResult = await createReminder(
             { ...core, scheduler: reminderScheduler },
             {
               commandId: nextCommandId(),
@@ -273,6 +275,21 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
               message: entry.message.length > 0 ? entry.message : null,
               enabled: entry.enabled,
             },
+          );
+          if (!reminderResult.ok) {
+            failures.push(reminderResult.error.message);
+          } else if (reminderResult.value.scheduleState === 'denied') {
+            denied = true;
+          }
+        }
+        // the board saved either way; a lost reminder or a denied schedule
+        // must not disappear silently
+        if (failures.length > 0) {
+          Alert.alert('A reminder could not be saved', failures[0]);
+        } else if (denied) {
+          Alert.alert(
+            'Notifications are off',
+            'The reminder is saved but disabled. Allow notifications in Settings to turn it on.',
           );
         }
       }

@@ -1,7 +1,7 @@
 import { Stack } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import { useEffect, useState } from 'react';
-import { Linking, ScrollView, View } from 'react-native';
+import { AppState, Linking, ScrollView, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
 import { getNotificationOverview } from '@/core/domain/queries';
@@ -28,31 +28,43 @@ function errorLabel(code: string): string {
 export function NotificationsScreen() {
   const scheme = useScheme();
   const [authorization, setAuthorization] = useState<AuthorizationState>('loading');
+  const [settingsError, setSettingsError] = useState<string | null>(null);
   const overview = useProductQuery((c) => getNotificationOverview(c), []);
 
+  // the status re-reads on every return to the foreground, so coming back
+  // from the system settings app shows the fresh authorization
   useEffect(() => {
     let cancelled = false;
-    Notifications.getPermissionsAsync().then(
-      (permissions) => {
-        if (cancelled) {
-          return;
-        }
-        setAuthorization(
-          permissions.granted
-            ? 'granted'
-            : permissions.canAskAgain
-              ? 'undetermined'
-              : 'denied',
-        );
-      },
-      () => {
-        if (!cancelled) {
-          setAuthorization('undetermined');
-        }
-      },
-    );
+    const read = () => {
+      Notifications.getPermissionsAsync().then(
+        (permissions) => {
+          if (cancelled) {
+            return;
+          }
+          setAuthorization(
+            permissions.granted
+              ? 'granted'
+              : permissions.canAskAgain
+                ? 'undetermined'
+                : 'denied',
+          );
+        },
+        () => {
+          if (!cancelled) {
+            setAuthorization('undetermined');
+          }
+        },
+      );
+    };
+    read();
+    const subscription = AppState.addEventListener('change', (appState) => {
+      if (appState === 'active') {
+        read();
+      }
+    });
     return () => {
       cancelled = true;
+      subscription?.remove?.();
     };
   }, []);
 
@@ -94,10 +106,18 @@ export function NotificationsScreen() {
           The app asks for permission the first time you enable a reminder. Reminders stay on
           this device.
         </AppText>
+        {settingsError ? (
+          <InlineError message={settingsError} testID="notifications-settings-error" />
+        ) : null}
         {authorization === 'denied' ? (
           <PrimaryButton
             title="Open Settings"
-            onPress={() => void Linking.openSettings()}
+            onPress={() => {
+              setSettingsError(null);
+              Linking.openSettings().catch(() => {
+                setSettingsError('Settings could not be opened. Open the Settings app manually.');
+              });
+            }}
             testID="notifications-open-settings"
           />
         ) : null}

@@ -12,6 +12,7 @@ export class FakeReminderScheduler implements ReminderScheduler {
   prompts = 0;
   capacity = 64;
   failNextSchedules = 0;
+  failNextCancels = 0;
   private counter = 0;
   pending = new Map<string, ReminderScheduleRequest>();
   cancelled: string[] = [];
@@ -30,6 +31,10 @@ export class FakeReminderScheduler implements ReminderScheduler {
     return this.capacity - this.pending.size;
   }
 
+  async pendingIdentifiers(): Promise<string[]> {
+    return [...this.pending.keys()];
+  }
+
   async schedule(request: ReminderScheduleRequest): Promise<string> {
     if (this.failNextSchedules > 0) {
       this.failNextSchedules -= 1;
@@ -42,6 +47,10 @@ export class FakeReminderScheduler implements ReminderScheduler {
   }
 
   async cancel(identifiers: string[]): Promise<void> {
+    if (this.failNextCancels > 0) {
+      this.failNextCancels -= 1;
+      throw new Error('native cancel failed');
+    }
     for (const identifier of identifiers) {
       this.pending.delete(identifier);
       this.cancelled.push(identifier);

@@ -48,6 +48,9 @@ export type Reminder = {
   minuteOfDay: number;
   message: string | null;
   enabled: boolean;
+  // adapter-owned pending-request identifiers, hydrated from the schedule
+  // table; commands never set these directly
+  nativeIdentifiers: string[];
   scheduleState: ReminderScheduleState;
   lastScheduleError: string | null;
   createdAt: number;

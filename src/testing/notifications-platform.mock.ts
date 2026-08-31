@@ -48,6 +48,9 @@ export const reminderScheduler: ReminderScheduler = {
   async remainingCapacity() {
     return notificationsPlatformMock.capacity - notificationsPlatformMock.pending.size;
   },
+  async pendingIdentifiers() {
+    return [...notificationsPlatformMock.pending.keys()];
+  },
   async schedule(request: ReminderScheduleRequest) {
     if (notificationsPlatformMock.failNextSchedules > 0) {
       notificationsPlatformMock.failNextSchedules -= 1;
