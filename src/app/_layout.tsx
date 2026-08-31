@@ -1,7 +1,9 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { useEffect } from 'react';
 import { useColorScheme } from 'react-native';
 
 import { ProductProvider } from '@/features/product-store';
+import { cleanupStaleExports } from '@/platform/data-transfer';
 
 // every modal surface presents as a native page sheet (slide-up card with
 // drag-to-dismiss). the formSheet presentation was abandoned after it
@@ -17,6 +19,12 @@ export default function RootLayout() {
   // without an explicit navigation theme the headers stay light in dark
   // mode (invisible sheet titles, light button pills on black)
   const scheme = useColorScheme();
+
+  // export files a previous session left in the cache are removed on the
+  // next launch per the export spec
+  useEffect(() => {
+    cleanupStaleExports();
+  }, []);
   return (
     <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
       <ProductProvider>
@@ -32,6 +40,11 @@ export default function RootLayout() {
           <Stack.Screen name="boards/[boardId]/check-ins/[checkInId]" options={sheet} />
           <Stack.Screen name="settings/index" options={sheet} />
           <Stack.Screen name="settings/archived" options={sheet} />
+          <Stack.Screen name="settings/import" options={sheet} />
+          <Stack.Screen name="settings/notifications" options={sheet} />
+          <Stack.Screen name="settings/icloud" options={sheet} />
+          <Stack.Screen name="settings/app-icon" options={sheet} />
+          <Stack.Screen name="settings/timeline" options={sheet} />
         </Stack>
       </ProductProvider>
     </ThemeProvider>
