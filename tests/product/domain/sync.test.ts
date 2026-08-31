@@ -673,6 +673,126 @@ describe('sync engine edges', () => {
     });
   });
 
+  it('defers an orphan dependent instead of stalling its page forever', async () => {
+    const { harness, transport, deps } = await setup();
+    const boardId = '00000000-0000-4000-8000-0000000000f8';
+    // the check-in arrives before its board ever does
+    transport.seedRemote({
+      schemaVersion: SYNC_SCHEMA_VERSION,
+      entityType: 'check_in',
+      entityId: '00000000-0000-4000-8000-0000000000f9',
+      mutationStamp: '00000000000900-00001-other',
+      deleted: false,
+      fields: {
+        id: '00000000-0000-4000-8000-0000000000f9',
+        board_id: boardId,
+        logical_date: '2026-08-20',
+        occurred_at_utc: null,
+        time_zone_id: null,
+        offset_minutes: null,
+        amount: null,
+        note: 'orphan',
+        source: 'sync',
+        idempotency_key: '00000000-0000-4000-8000-0000000000fa',
+        created_at: 1,
+        updated_at: 2,
+        deleted_at: null,
+      },
+    });
+    const first = await runSync(deps);
+    if (!first.ok) {
+      throw new Error(first.error.message);
+    }
+    // the page still committed and its token advanced
+    expect(first.value.status).toBe('up_to_date');
+    expect(first.value.applied).toBe(0);
+    const deferred = await harness.db.getAllAsync('SELECT entity_id FROM sync_deferred');
+    expect(deferred).toHaveLength(1);
+
+    // the board arrives later and the deferred record lands on the next pass
+    transport.seedRemote(remoteBoard({ id: boardId, stamp: '00000000000901-00001-other' }));
+    const second = await runSync(deps);
+    if (!second.ok) {
+      throw new Error(second.error.message);
+    }
+    // the board plus the unblocked check-in
+    expect(second.value.applied).toBe(2);
+    const history = await getGroupedCheckInHistory(harness.deps, boardId as BoardId);
+    if (!history.ok) {
+      throw new Error('history failed');
+    }
+    expect(history.value.months[0].days[0].checkIns[0].note).toBe('orphan');
+    const remaining = await harness.db.getAllAsync('SELECT entity_id FROM sync_deferred');
+    expect(remaining).toHaveLength(0);
+    await harness.db.closeAsync();
+  });
+
+  it('applies a deferred record on an empty page once its parent exists locally', async () => {
+    const { harness, transport, deps } = await setup();
+    const boardId = '00000000-0000-4000-8000-0000000000e7';
+    transport.seedRemote({
+      schemaVersion: SYNC_SCHEMA_VERSION,
+      entityType: 'check_in',
+      entityId: '00000000-0000-4000-8000-0000000000e8',
+      mutationStamp: '00000000000900-00001-other',
+      deleted: false,
+      fields: {
+        id: '00000000-0000-4000-8000-0000000000e8',
+        board_id: boardId,
+        logical_date: '2026-08-21',
+        occurred_at_utc: null,
+        time_zone_id: null,
+        offset_minutes: null,
+        amount: null,
+        note: 'waited',
+        source: 'sync',
+        idempotency_key: '00000000-0000-4000-8000-0000000000e9',
+        created_at: 1,
+        updated_at: 2,
+        deleted_at: null,
+      },
+    });
+    const first = await runSync(deps);
+    expect(first.ok && first.value.applied).toBe(0);
+
+    // the parent appears locally rather than through the change feed
+    await harness.db.runAsync(
+      `INSERT INTO boards (id, title, symbol, accent_hex, uses_tinted_background, tracks_amount,
+         amount_unit, quick_amount, tracks_time, start_of_day_minute, metrics_enabled, order_key,
+         archived_at, created_at, updated_at, mutation_stamp, deleted_at)
+       VALUES (?, 'local parent', 'star.fill', '#70A7FF', 1, 0, NULL, 1, 0, 0, 1, 'z9', NULL, 1, 2, 's', NULL)`,
+      [boardId],
+    );
+
+    // the next pass fetches nothing new, and the drain still lands the record
+    const second = await runSync(deps);
+    if (!second.ok) {
+      throw new Error(second.error.message);
+    }
+    expect(second.value.applied).toBe(1);
+    const history = await getGroupedCheckInHistory(harness.deps, boardId as BoardId);
+    expect(history.ok && history.value.months[0].days[0].checkIns[0].note).toBe('waited');
+    // the projection rebuilt for the newly visible day
+    const rows = await harness.db.getAllAsync<{ title: string }>(
+      'SELECT title FROM widget_board_rows',
+    );
+    expect(rows.map((row) => row.title)).toContain('local parent');
+    await harness.db.closeAsync();
+  });
+
+  it('drops a deferred record whose payload cannot be read', async () => {
+    const { harness, deps } = await setup();
+    await harness.db.runAsync(
+      `INSERT INTO sync_deferred (entity_type, entity_id, mutation_stamp, payload, first_seen_at)
+       VALUES ('check_in', 'broken', 's', 'not json', 1)`,
+    );
+    const result = await runSync(deps);
+    expect(result.ok && result.value.status).toBe('up_to_date');
+    const remaining = await harness.db.getAllAsync('SELECT entity_id FROM sync_deferred');
+    expect(remaining).toHaveLength(0);
+    await harness.db.closeAsync();
+  });
+
   it('parses and rejects period entity ids', () => {
     const { parsePeriodEntityId } = jest.requireActual<
       typeof import('@/core/sync/records')

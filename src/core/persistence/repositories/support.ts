@@ -335,3 +335,55 @@ export async function readRawRow(
   );
   return row ?? null;
 }
+
+// --- deferred sync records ----------------------------------------------------
+
+export type DeferredRecordRow = {
+  entityType: string;
+  entityId: string;
+  mutationStamp: string;
+  payload: string;
+};
+
+export async function saveDeferredRecord(
+  tx: SqlExecutor,
+  row: DeferredRecordRow & { firstSeenAt: number },
+): Promise<void> {
+  await tx.runAsync(
+    `INSERT INTO sync_deferred (entity_type, entity_id, mutation_stamp, payload, first_seen_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (entity_type, entity_id) DO UPDATE SET
+       mutation_stamp = excluded.mutation_stamp,
+       payload = excluded.payload`,
+    [row.entityType, row.entityId, row.mutationStamp, row.payload, row.firstSeenAt],
+  );
+}
+
+export async function listDeferredRecords(tx: SqlExecutor): Promise<DeferredRecordRow[]> {
+  const rows = await tx.getAllAsync<{
+    entity_type: string;
+    entity_id: string;
+    mutation_stamp: string;
+    payload: string;
+  }>(
+    `SELECT entity_type, entity_id, mutation_stamp, payload FROM sync_deferred
+     ORDER BY first_seen_at, entity_id`,
+  );
+  return rows.map((row) => ({
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    mutationStamp: row.mutation_stamp,
+    payload: row.payload,
+  }));
+}
+
+export async function deleteDeferredRecord(
+  tx: SqlExecutor,
+  entityType: string,
+  entityId: string,
+): Promise<void> {
+  await tx.runAsync('DELETE FROM sync_deferred WHERE entity_type = ? AND entity_id = ?', [
+    entityType,
+    entityId,
+  ]);
+}

@@ -4,11 +4,14 @@ import { err, ok } from '../domain/result';
 import type { SqlDatabase, SqlExecutor } from '../persistence/database';
 import { rebuildWidgetRows } from '../persistence/projections/widget-rows';
 import {
+  deleteDeferredRecord,
   deleteOutboxRows,
   getSettings,
   getSyncState,
+  listDeferredRecords,
   listOutbox,
   readRawRow,
+  saveDeferredRecord,
   saveHlc,
   saveSyncState,
 } from '../persistence/repositories/support';
@@ -238,6 +241,52 @@ function applyOrder(records: SyncRecord[]): SyncRecord[] {
   return [...records].sort((a, b) => weight[a.entityType] - weight[b.entityType]);
 }
 
+// a fetched record can arrive before its parent board. applying it would
+// violate the foreign key and roll back the whole page, and because the
+// change token never advances that page would fail forever. the record
+// waits in sync_deferred instead and is retried on every later pass.
+async function applyWithDeferral(
+  tx: SqlExecutor,
+  record: SyncRecord,
+  now: number,
+): Promise<boolean> {
+  try {
+    const applied = await applyRecord(tx, record);
+    await deleteDeferredRecord(tx, record.entityType, record.entityId);
+    return applied;
+  } catch {
+    await saveDeferredRecord(tx, {
+      entityType: record.entityType,
+      entityId: record.entityId,
+      mutationStamp: record.mutationStamp,
+      payload: JSON.stringify(record),
+      firstSeenAt: now,
+    });
+    return false;
+  }
+}
+
+// deferred records are retried after each page, so a parent that arrived
+// either earlier or in that same page unblocks its dependents
+async function drainDeferred(tx: SqlExecutor, now: number): Promise<number> {
+  let applied = 0;
+  for (const row of await listDeferredRecords(tx)) {
+    let record: SyncRecord;
+    try {
+      record = JSON.parse(row.payload) as SyncRecord;
+    } catch {
+      // an unreadable payload can never be applied; drop it rather than
+      // retrying it on every pass forever
+      await deleteDeferredRecord(tx, row.entityType, row.entityId);
+      continue;
+    }
+    if (await applyWithDeferral(tx, record, now)) {
+      applied += 1;
+    }
+  }
+  return applied;
+}
+
 // --- run ----------------------------------------------------------------------
 
 // one sync pass: upload the outbox, then drain remote pages. the change
@@ -302,10 +351,13 @@ export function runSync(deps: SyncDeps): Promise<DomainResult<SyncOutcome>> {
               // the local clock observes every remote stamp, so later local
               // mutations sort after everything already seen
               hlc = observe(hlc, record.mutationStamp);
-              if (await applyRecord(tx, record)) {
+              if (await applyWithDeferral(tx, record, now)) {
                 count += 1;
               }
             }
+            // draining after the page lets a parent that arrived in this
+            // very page unblock the dependents waiting on it
+            count += await drainDeferred(tx, now);
             await saveHlc(tx, hlc);
             await rebuildWidgetRows(tx, now, timeZoneId);
             // the token lands in the same commit as its records
@@ -316,10 +368,18 @@ export function runSync(deps: SyncDeps): Promise<DomainResult<SyncOutcome>> {
             return count;
           });
           applied += committed;
-        } else if (page.nextToken !== token) {
-          await deps.db.withExclusiveTransactionAsync(async (tx) => {
+        } else {
+          // an empty page still gives deferred records a chance, and its
+          // token still advances
+          const drained = await deps.db.withExclusiveTransactionAsync(async (tx) => {
+            const count = await drainDeferred(tx, now);
+            if (count > 0) {
+              await rebuildWidgetRows(tx, now, timeZoneId);
+            }
             await saveSyncState(tx, { ...(await getSyncState(tx)), changeToken: page.nextToken });
+            return count;
           });
+          applied += drained;
         }
         token = page.nextToken;
         if (!page.more) {

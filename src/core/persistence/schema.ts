@@ -126,6 +126,23 @@ export const migrations: readonly Migration[] = [
       `ALTER TABLE app_settings ADD COLUMN settings_mutation_stamp TEXT`,
     ],
   },
+  {
+    version: 3,
+    name: 'sync_deferred',
+    statements: [
+      // a fetched record whose parent has not arrived yet cannot be applied
+      // in its own page. it waits here instead of rolling the page back,
+      // which would stall sync on the same page forever.
+      `CREATE TABLE sync_deferred (
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        mutation_stamp TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        first_seen_at INTEGER NOT NULL,
+        PRIMARY KEY (entity_type, entity_id)
+      )`,
+    ],
+  },
 ];
 
 export const latestSchemaVersion = migrations[migrations.length - 1].version;
