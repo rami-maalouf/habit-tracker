@@ -31,6 +31,7 @@ module.exports = {
     '^expo-notifications$': '<rootDir>/src/testing/expo-notifications.mock.ts',
     '^@/platform/data-transfer$': '<rootDir>/src/testing/data-transfer.mock.ts',
     '^@/platform/notifications$': '<rootDir>/src/testing/notifications-platform.mock.ts',
+    '^@/platform/widgets$': '<rootDir>/src/testing/widgets-platform.mock.ts',
     '^react-native-svg$': '<rootDir>/src/testing/react-native-svg.mock.tsx',
     '^@expo/ui/community/slider$': '<rootDir>/src/testing/expo-ui-slider.mock.tsx',
     '^@expo/ui/community/bottom-sheet$': '<rootDir>/src/testing/expo-ui-bottom-sheet.mock.tsx',

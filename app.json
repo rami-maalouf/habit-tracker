@@ -13,6 +13,9 @@
       "bundleIdentifier": "com.ramimaalouf.habittracker",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": ["group.com.ramimaalouf.habittracker"]
       }
     },
     "android": {
@@ -42,7 +45,26 @@
       "expo-image",
       "expo-sqlite",
       "expo-sharing",
-      "expo-localization"
+      "expo-localization",
+      [
+        "expo-widgets",
+        {
+          "groupIdentifier": "group.com.ramimaalouf.habittracker",
+          "widgets": [
+            {
+              "name": "RipplesBoards",
+              "displayName": "Ripples",
+              "description": "Your boards with seven-day strips and quick check-in.",
+              "supportedFamilies": [
+                "systemSmall",
+                "systemMedium",
+                "systemLarge",
+                "systemExtraLarge"
+              ]
+            }
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

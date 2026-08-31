@@ -4,7 +4,8 @@ import type { ReactNode } from 'react';
 import { AppState, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
-import type { CommandId } from '@/core/domain/ids';
+import { createCheckIn } from '@/core/domain/commands';
+import type { BoardId, CommandId } from '@/core/domain/ids';
 import { reconcileReminderSchedules } from '@/core/domain/reminder-commands';
 import type { DomainError, DomainResult } from '@/core/domain/result';
 import type { ProductCore } from '@/platform/database/product-core';
@@ -14,6 +15,7 @@ import {
   getInitialNotificationBoardId,
   reminderScheduler,
 } from '@/platform/notifications';
+import { addWidgetQuickActionListener, refreshWidgets } from '@/platform/widgets';
 import { spacing } from '@/theme';
 
 type ProductContextValue = {
@@ -113,6 +115,38 @@ export function ProductProvider({ children, coreOverride }: ProductProviderProps
     });
     return () => subscription?.remove?.();
   }, [invalidate, reconcile]);
+
+  // every store change pushes the fresh projection into the widget
+  // timeline; widgets never query the database themselves
+  useEffect(() => {
+    if (state.status !== 'ready') {
+      return;
+    }
+    void refreshWidgets(state.core);
+  }, [state, version]);
+
+  // a widget quick action runs the same command contract as the app's
+  // quick check-in; a failure deep-links to the add check-in sheet instead
+  // of recording a partial row
+  useEffect(() => {
+    if (state.status !== 'ready') {
+      return;
+    }
+    const core = state.core;
+    return addWidgetQuickActionListener((boardId) => {
+      void createCheckIn(core, {
+        commandId: core.ids.uuid() as CommandId,
+        boardId: boardId as BoardId,
+        source: 'widget',
+      }).then((result) => {
+        if (result.ok) {
+          invalidate();
+        } else {
+          router.push(`/boards/${boardId}/check-ins/new`);
+        }
+      });
+    });
+  }, [invalidate, state]);
 
   // a tapped reminder deep-links to its board's add check-in sheet, both
   // while running and when the tap cold-started the app

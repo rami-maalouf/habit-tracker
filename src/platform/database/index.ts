@@ -1,4 +1,4 @@
-import { Paths } from 'expo-file-system';
+import { Directory, File, Paths } from 'expo-file-system';
 import * as SQLite from 'expo-sqlite';
 import { Platform } from 'react-native';
 
@@ -27,8 +27,34 @@ export function productDatabaseDirectory(): string | undefined {
 // connection where foreign keys are enabled at connection level and a mutex
 // keeps exclusive transactions from interleaving with other statements;
 // reads use the primary connection with deferred transactions.
+// installs that predate the app group entitlement created the database in
+// the default sqlite location; the first open after the entitlement lands
+// moves the files (with wal and shm) into the shared container so the app
+// and the widget extension keep reading one store
+function relocateLegacyDatabase(containerUri: string): void {
+  try {
+    const target = new File(containerUri, productDatabaseName);
+    if (target.exists) {
+      return;
+    }
+    const legacyDirectory = new Directory(Paths.document, 'SQLite');
+    for (const suffix of ['', '-wal', '-shm']) {
+      const source = new File(legacyDirectory, `${productDatabaseName}${suffix}`);
+      if (source.exists) {
+        source.move(new File(containerUri, `${productDatabaseName}${suffix}`));
+      }
+    }
+  } catch {
+    // a failed move leaves the legacy files untouched; the open below then
+    // starts fresh in the shared container rather than crashing
+  }
+}
+
 export async function openProductSqlDatabase(): Promise<SqlDatabase> {
   const directory = productDatabaseDirectory();
+  if (directory !== undefined) {
+    relocateLegacyDatabase(directory);
+  }
   const readDb = await SQLite.openDatabaseAsync(productDatabaseName, undefined, directory);
   const writeDb = await SQLite.openDatabaseAsync(
     productDatabaseName,
