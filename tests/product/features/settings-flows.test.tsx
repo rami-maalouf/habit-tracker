@@ -78,7 +78,7 @@ describe('settings sheet', () => {
     );
   });
 
-  it('exports a shareable snapshot after the privacy confirmation', async () => {
+  it('exports a shareable snapshot from the export destination', async () => {
     const opened = await getProductCore();
     if (!opened.ok) {
       throw new Error('core failed');
@@ -100,18 +100,15 @@ describe('settings sheet', () => {
 
     renderRouter('src/app', { initialUrl: '/settings' });
     await screen.findByTestId('settings-export');
-
-    alertSpy.mockImplementationOnce((_title, _message, buttons) => {
-      buttons?.find((button) => button.text === 'Export')?.onPress?.();
-    });
     await press('settings-export');
+
+    // the destination itself warns about private notes before sharing
+    expect(await screen.findByTestId('export-start')).toBeOnTheScreen();
+    expect(screen.getByText(/contains your private notes/)).toBeOnTheScreen();
+    await press('export-start');
     await settle();
 
-    expect(alertSpy).toHaveBeenCalledWith(
-      'Export Data',
-      expect.stringContaining('private notes'),
-      expect.any(Array),
-    );
+    expect(await screen.findByTestId('export-shared')).toBeOnTheScreen();
     expect(dataTransferMock.sharedFiles).toHaveLength(1);
     const shared = dataTransferMock.sharedFiles[0];
     expect(shared.fileName).toMatch(/^ripples-export-.*Z\.json$/);
@@ -124,16 +121,28 @@ describe('settings sheet', () => {
     expect(parsed.value.boards[0].title).toBe('to export');
   });
 
-  it('surfaces a failed share without losing the sheet', async () => {
+  it('surfaces a failed share on the export destination', async () => {
     dataTransferMock.shareOutcome = 'error';
-    renderRouter('src/app', { initialUrl: '/settings' });
-    await screen.findByTestId('settings-export');
-    alertSpy.mockImplementationOnce((_title, _message, buttons) => {
-      buttons?.find((button) => button.text === 'Export')?.onPress?.();
-    });
-    await press('settings-export');
+    renderRouter('src/app', { initialUrl: '/settings/export' });
+    await screen.findByTestId('export-start');
+    await press('export-start');
     await settle();
-    expect(await screen.findByTestId('settings-export-error')).toBeOnTheScreen();
+    expect(await screen.findByTestId('export-error')).toBeOnTheScreen();
+    expect(screen.queryByTestId('export-shared')).toBeNull();
+  });
+
+  it('surfaces a failed snapshot before any share happens', async () => {
+    const opened = await getProductCore();
+    if (!opened.ok) {
+      throw new Error('core failed');
+    }
+    await opened.value.db.closeAsync();
+    renderRouter('src/app', { initialUrl: '/settings/export' });
+    await screen.findByTestId('export-start');
+    await press('export-start');
+    await settle();
+    expect(await screen.findByTestId('export-error')).toBeOnTheScreen();
+    expect(dataTransferMock.sharedFiles).toHaveLength(0);
   });
 });
 
@@ -308,7 +317,7 @@ describe('notifications, icloud, icon, and timeline surfaces', () => {
   });
 
   it('renders the explicit icon and timeline states', async () => {
-    renderRouter('src/app', { initialUrl: '/settings/app-icon' });
+    renderRouter('src/app', { initialUrl: '/settings/icons' });
     expect(await screen.findByTestId('app-icon-interim')).toBeOnTheScreen();
     expect(screen.getByTestId('icon-preview-midnight')).toBeOnTheScreen();
 
@@ -324,7 +333,7 @@ describe('icloud sync settings', () => {
   });
 
   it('explains where the data goes before turning sync on', async () => {
-    renderRouter('src/app', { initialUrl: '/settings/icloud' });
+    renderRouter('src/app', { initialUrl: '/settings/sync' });
     await screen.findByTestId('icloud-toggle');
     expect(screen.getByTestId('icloud-status')).toHaveTextContent(/Off/);
     // the transport is unavailable in this build and says so
@@ -365,7 +374,7 @@ describe('icloud sync settings', () => {
     if (!created.ok) {
       throw new Error(created.error.message);
     }
-    renderRouter('src/app', { initialUrl: '/settings/icloud' });
+    renderRouter('src/app', { initialUrl: '/settings/sync' });
     await screen.findByTestId('icloud-toggle');
     // the outbox depth is visible before any sync runs
     expect(screen.getByTestId('icloud-pending')).toHaveTextContent(/[1-9]/);
@@ -403,7 +412,7 @@ describe('icloud sync settings', () => {
        ON CONFLICT (id) DO UPDATE SET last_success_at = excluded.last_success_at`,
       [Date.UTC(2026, 7, 30, 16, 0)],
     );
-    renderRouter('src/app', { initialUrl: '/settings/icloud' });
+    renderRouter('src/app', { initialUrl: '/settings/sync' });
     await screen.findByTestId('icloud-last-sync');
     expect(screen.getByTestId('icloud-last-sync')).not.toHaveTextContent(/Never/);
     expect(screen.getByTestId('icloud-last-sync')).toHaveTextContent(/2026/);

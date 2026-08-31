@@ -1,15 +1,13 @@
 import { Stack, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import * as WebBrowser from 'expo-web-browser';
-import { Alert, Linking, ScrollView, View } from 'react-native';
+import { Linking, ScrollView, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
-import { getExportSnapshot, exportFileName, serializeExport } from '@/core/export/serialize';
-import { getExportMeta, saveAndShareExport } from '@/platform/data-transfer';
+import { getExportMeta } from '@/platform/data-transfer';
 import { semanticColor, spacing } from '@/theme';
 
-import { InlineError, useScheme } from '../ui';
-import { useProduct } from '../product-store';
+import { useScheme } from '../ui';
 import { releaseLink } from './release-links';
 import type { ReleaseLinkKey } from './release-links';
 import { SettingsGroup, SettingsRow } from './rows';
@@ -19,10 +17,7 @@ import { SettingsGroup, SettingsRow } from './rows';
 export function SettingsScreen() {
   const router = useRouter();
   const scheme = useScheme();
-  const { core } = useProduct();
   const [linkNotice, setLinkNotice] = useState<string | null>(null);
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
   const meta = getExportMeta();
 
   const openLink = useCallback((key: ReleaseLinkKey, title: string) => {
@@ -42,40 +37,6 @@ export function SettingsScreen() {
     });
   }, []);
 
-  const exportData = useCallback(() => {
-    // the confirmation explains the file can contain private notes
-    Alert.alert(
-      'Export Data',
-      'The export file contains all boards and check-ins, including private notes. Share it only with people you trust.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Export',
-          onPress: () => {
-            void (async () => {
-              setExporting(true);
-              setExportError(null);
-              const snapshot = await getExportSnapshot(core, meta);
-              if (!snapshot.ok) {
-                setExportError(snapshot.error.message);
-                setExporting(false);
-                return;
-              }
-              const shared = await saveAndShareExport(
-                serializeExport(snapshot.value),
-                exportFileName(snapshot.value.exportedAtUtc),
-              );
-              if (!shared.ok) {
-                setExportError(shared.error.message);
-              }
-              setExporting(false);
-            })();
-          },
-        },
-      ],
-    );
-  }, [core, meta]);
-
   return (
     <View style={{ flex: 1, backgroundColor: semanticColor('groupedBackground', scheme) }}>
       <Stack.Screen options={{ title: 'Settings' }} />
@@ -87,11 +48,6 @@ export function SettingsScreen() {
           <AppText variant="footnote" testID="settings-link-notice">
             {linkNotice}
           </AppText>
-        </View>
-      ) : null}
-      {exportError ? (
-        <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
-          <InlineError message={exportError} testID="settings-export-error" />
         </View>
       ) : null}
       <ScrollView
@@ -133,7 +89,7 @@ export function SettingsScreen() {
         <SettingsGroup title="Data">
           <SettingsRow
             title="iCloud Sync"
-            onPress={() => router.push('/settings/icloud')}
+            onPress={() => router.push('/settings/sync')}
             testID="settings-icloud"
           />
           <SettingsRow
@@ -151,13 +107,12 @@ export function SettingsScreen() {
         <SettingsGroup title="Utilities">
           <SettingsRow
             title="Export Data"
-            detail={exporting ? 'Preparing…' : undefined}
-            onPress={exporting ? undefined : exportData}
+            onPress={() => router.push('/settings/export')}
             testID="settings-export"
           />
           <SettingsRow
             title="App Icon"
-            onPress={() => router.push('/settings/app-icon')}
+            onPress={() => router.push('/settings/icons')}
             testID="settings-app-icon"
           />
         </SettingsGroup>

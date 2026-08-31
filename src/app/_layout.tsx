@@ -56,8 +56,9 @@ export default function RootLayout() {
           <Stack.Screen name="settings/archived" options={sheet} />
           <Stack.Screen name="settings/import" options={sheet} />
           <Stack.Screen name="settings/notifications" options={sheet} />
-          <Stack.Screen name="settings/icloud" options={sheet} />
-          <Stack.Screen name="settings/app-icon" options={sheet} />
+          <Stack.Screen name="settings/sync" options={sheet} />
+          <Stack.Screen name="settings/icons" options={sheet} />
+          <Stack.Screen name="settings/export" options={sheet} />
           <Stack.Screen name="settings/timeline" options={sheet} />
         </Stack>
       </ProductProvider>
