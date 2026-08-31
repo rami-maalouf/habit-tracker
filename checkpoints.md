@@ -122,6 +122,50 @@ Evidence images live under `.artifacts/` or system temp paths and stay out of Gi
 4. Tests: history-list fallback suite added (android path), swipe-delete and paging covered through the swift-ui mock; 290/290 with thresholds met.
 5. Commits: `8aa5cc3` (superseded by the push correction), `9dd9dd1`, `05dcba8`, `b0a51ab`, `1d582d3`, `81c7559`, `2bbbb72`, `dfe5e3a`, `2ec9f92`, all pushed to `origin/main`.
 
+## Open items at the end of the product build
+
+Everything below is blocked on inputs or capabilities this environment does
+not have. Nothing here is a silent omission: each has a visible, honest
+state in the app and a test that pins that state.
+
+### One local Swift native module (the spec's approved single module)
+
+Four features share this dependency. The spec assigns all of them to it, and
+none can be built or verified without a signed Apple Developer team:
+
+1. **CloudKit sync transport.** The engine, provider-neutral records,
+   conflict resolution, tombstones, deferral, retry, and status are built and
+   tested against a deterministic fake (`tests/product/helpers/fake-transport.ts`).
+   `src/platform/sync/index.ios.ts` throws a typed `unavailable`, so
+   Settings > iCloud Sync reports `Needs Attention` and keeps every change
+   queued. The spec's two-device convergence check needs signed builds.
+2. **App Intents executor (Shortcuts and Siri).** The TypeScript executor and
+   the shared JSON fixture suite are complete
+   (`src/core/automations/`); the Swift executor must pass the same fixtures.
+3. **Widget in-place quick check-in.** Proven on device to be impossible
+   through expo-widgets alone: the button's intent performs in the extension
+   process and its event never reaches the app. The widget deep-links to Add
+   Check-In, which is the spec's rule for an action that cannot safely run.
+4. **Alternate app icons.** `UIApplication.setAlternateIconName` belongs to
+   this module. Settings > App Icon shows the three previews and says
+   selection arrives with a native update.
+
+### Missing release inputs
+
+- Apple Developer team (blocks the module, the CloudKit container, and every
+  signed-build check).
+- Product and legal URLs: feedback, App Store review, more products, privacy
+  policy, terms of use. `releaseLink()` validates them and the settings sheet
+  shows an explicit missing-link notice above the fold.
+- Alternate icon assets for Midnight and Paper.
+
+### Deliberate non-implementations
+
+- Order-key compaction after reconciliation and the 90-day local tombstone
+  purge: both are the spec's optional ("may") clauses.
+- Android ships no Kotlin by design - interfaces, android-safe stubs,
+  contract fixtures, and `docs/android-readiness.md` only.
+
 ## Approvals log
 
 - 2026-08-30: human approved the spec (recorded in spec).
