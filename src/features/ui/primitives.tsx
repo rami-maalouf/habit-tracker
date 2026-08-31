@@ -120,4 +120,3 @@ export function InlineError({ message, testID }: { message: string; testID?: str
   );
 }
 
-export { RecoveryScreen } from './recovery';

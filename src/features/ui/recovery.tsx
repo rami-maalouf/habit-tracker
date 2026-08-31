@@ -4,7 +4,7 @@ import { View } from 'react-native';
 import { AppText } from '@/components/foundation/app-text';
 import { spacing } from '@/theme';
 
-import { PrimaryButton } from './index';
+import { PrimaryButton } from './primitives';
 
 // shared recovery surface for invalid or missing route parameters
 export function RecoveryScreen({ message }: { message: string }) {
