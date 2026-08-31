@@ -1,0 +1,51 @@
+# Let a reviewer hold the fix, not just look at evidence for it.
+#
+# Pattern adapted from github.com/SchroederNathan/clarity
+# (.eas/workflows/pr-preview-update.yml). A maintainer applies the
+# `preview-approved` label to a PR's exact revision, which publishes a
+# scan-only OTA update to a branch scoped to that PR - never the shared
+# `preview` channel, so nobody else's installed preview build changes.
+#
+# Security: this runs in the `preview` EAS environment, which - unlike
+# `production` - has zero secrets configured. An agent-authored PR branch is
+# untrusted code until a human has reviewed it, so the job that builds and
+# publishes from that branch must not have access to CLAUDE_CODE_OAUTH_TOKEN,
+# GITHUB_TOKEN, or EXPO_TOKEN. Confirmed empty via `eas env:list preview`
+# before adding this file.
+#
+# A later commit on the same PR does not republish automatically - EAS
+# Workflows' `pull_request_labeled` trigger fires on the labeling event, not
+# on every push. Remove and reapply the label to approve a new revision. This
+# is deliberate: a maintainer approves an exact commit, not "whatever's on
+# this PR right now."
+#
+# Requires a build compatible with this update already installed (the `sim`
+# or `preview` build profile) - a scanned QR code loads a JS bundle onto an
+# existing native binary, it does not install a new app.
+
+on:
+  pull_request_labeled:
+    labels: [preview-approved]
+
+jobs:
+  publish_preview:
+    name: Publish scan-only PR preview
+    # Same-repo, non-draft, targeting main - a fork PR or a draft never gets
+    # a secrets-free preview build published automatically off a label.
+    if: ${{ github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft == false }}
+    type: update
+    environment: preview
+    params:
+      # pr-<n>, never the shared `preview` channel - publishing there would
+      # push this revision to every installed preview build without anyone
+      # choosing to scan anything.
+      branch: pr-${{ github.event.pull_request.number }}
+      platform: all
+
+  comment:
+    name: Add preview QR to the PR
+    needs: [publish_preview]
+    type: github-comment
+    params:
+      update_group_ids: ['${{ needs.publish_preview.outputs.first_update_group_id }}']
+      message: This revision was approved for preview. Scan the QR code with a `sim` or `preview` build of Ripples to try the fix yourself before merging.
