@@ -65,10 +65,13 @@ export async function saveICloudSyncEnabled(tx: SqlExecutor, enabled: boolean): 
 export async function saveMetricsEducationDismissed(
   tx: SqlExecutor,
   boardIds: BoardId[],
+  mutationStamp: string,
 ): Promise<void> {
-  await tx.runAsync('UPDATE app_settings SET metrics_education_dismissed = ? WHERE id = 1', [
-    JSON.stringify(boardIds),
-  ]);
+  await tx.runAsync(
+    `UPDATE app_settings SET metrics_education_dismissed = ?, settings_mutation_stamp = ?
+     WHERE id = 1`,
+    [JSON.stringify(boardIds), mutationStamp],
+  );
 }
 
 // --- command receipts -------------------------------------------------------

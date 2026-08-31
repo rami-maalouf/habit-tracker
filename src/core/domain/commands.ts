@@ -667,8 +667,9 @@ export function dismissMetricsEducation(
   return runCommand(deps, input.commandId, async ({ tx, now, settings, stamp }) => {
     if (!settings.metricsEducationDismissed.includes(input.boardId)) {
       const dismissed = [...settings.metricsEducationDismissed, input.boardId];
-      await saveMetricsEducationDismissed(tx, dismissed);
-      await appendOutbox(tx, 'settings', 'app-settings', stamp(), now);
+      const mutationStamp = stamp();
+      await saveMetricsEducationDismissed(tx, dismissed, mutationStamp);
+      await appendOutbox(tx, 'settings', 'app-settings', mutationStamp, now);
     }
     return ok(undefined);
   });

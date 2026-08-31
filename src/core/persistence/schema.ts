@@ -117,6 +117,15 @@ export const migrations: readonly Migration[] = [
       )`,
     ],
   },
+  {
+    version: 2,
+    name: 'settings_mutation_stamp',
+    statements: [
+      // the settings record syncs as one provider-neutral row, so it needs
+      // its own mutation stamp for the same last-writer-wins comparison
+      `ALTER TABLE app_settings ADD COLUMN settings_mutation_stamp TEXT`,
+    ],
+  },
 ];
 
 export const latestSchemaVersion = migrations[migrations.length - 1].version;
