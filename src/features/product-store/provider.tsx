@@ -156,9 +156,13 @@ export function ProductProvider({ children, coreOverride }: ProductProviderProps
     void refreshWidgets(state.core);
   }, [state, version]);
 
-  // a widget quick action runs the same command contract as the app's
-  // quick check-in; a failure deep-links to the add check-in sheet instead
-  // of recording a partial row
+  // the app-side half of the widget action contract: an interaction event
+  // records through the very same command the app's quick check-in uses,
+  // and a failure deep-links to Add Check-In instead of recording a
+  // partial row. home screen widget presses cannot reach here yet (their
+  // intent performs inside the extension process - see the widget layout's
+  // note), so today this serves the native executor and Live Activity
+  // paths while the widget itself deep-links.
   useEffect(() => {
     if (state.status !== 'ready') {
       return;

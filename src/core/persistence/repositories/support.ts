@@ -247,3 +247,88 @@ export async function tombstoneBoardGraph(
     periodIds: periods.map((row) => row.id),
   };
 }
+
+// --- sync ---------------------------------------------------------------------
+
+export type SyncStateRow = {
+  changeToken: string | null;
+  zoneCreated: boolean;
+  retryState: string | null;
+  lastSuccessAtUtc: number | null;
+};
+
+export async function getSyncState(tx: SqlExecutor): Promise<SyncStateRow> {
+  const row = await tx.getFirstAsync<{
+    change_token: string | null;
+    zone_created: number;
+    retry_state: string | null;
+    last_success_at: number | null;
+  }>('SELECT change_token, zone_created, retry_state, last_success_at FROM sync_state WHERE id = 1');
+  return {
+    changeToken: row?.change_token ?? null,
+    zoneCreated: row?.zone_created === 1,
+    retryState: row?.retry_state ?? null,
+    lastSuccessAtUtc: row?.last_success_at ?? null,
+  };
+}
+
+export async function saveSyncState(tx: SqlExecutor, state: SyncStateRow): Promise<void> {
+  await tx.runAsync(
+    `INSERT INTO sync_state (id, change_token, zone_created, retry_state, last_success_at)
+     VALUES (1, ?, ?, ?, ?)
+     ON CONFLICT (id) DO UPDATE SET
+       change_token = excluded.change_token,
+       zone_created = excluded.zone_created,
+       retry_state = excluded.retry_state,
+       last_success_at = excluded.last_success_at`,
+    [state.changeToken, state.zoneCreated ? 1 : 0, state.retryState, state.lastSuccessAtUtc],
+  );
+}
+
+export type OutboxRow = {
+  id: number;
+  entityType: OutboxEntityType;
+  entityId: string;
+  mutationStamp: string;
+};
+
+// oldest first, so a partial upload always makes forward progress
+export async function listOutbox(tx: SqlExecutor, limit: number): Promise<OutboxRow[]> {
+  const rows = await tx.getAllAsync<{
+    id: number;
+    entity_type: string;
+    entity_id: string;
+    mutation_stamp: string;
+  }>(
+    `SELECT id, entity_type, entity_id, mutation_stamp FROM mutation_outbox
+     ORDER BY id LIMIT ?`,
+    [limit],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    entityType: row.entity_type as OutboxEntityType,
+    entityId: row.entity_id,
+    mutationStamp: row.mutation_stamp,
+  }));
+}
+
+export async function deleteOutboxRows(tx: SqlExecutor, ids: number[]): Promise<void> {
+  for (const id of ids) {
+    await tx.runAsync('DELETE FROM mutation_outbox WHERE id = ?', [id]);
+  }
+}
+
+// generic raw row read for sync serialization; sync ships whole records,
+// so the column list stays open rather than entity-typed
+export async function readRawRow(
+  tx: SqlExecutor,
+  table: string,
+  idColumn: string,
+  id: string,
+): Promise<Record<string, string | number | null> | null> {
+  const row = await tx.getFirstAsync<Record<string, string | number | null>>(
+    `SELECT * FROM ${table} WHERE ${idColumn} = ?`,
+    [id],
+  );
+  return row ?? null;
+}

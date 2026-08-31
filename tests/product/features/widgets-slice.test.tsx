@@ -102,7 +102,7 @@ describe('widget wiring', () => {
     void boardId;
   });
 
-  it('records a widget quick action through the shared command contract', async () => {
+  it('records a donated widget action through the shared command contract', async () => {
     const boardId = await seedBoard();
     renderRouter('src/app', { initialUrl: '/' });
     await screen.findByText('widget board');
@@ -119,7 +119,7 @@ describe('widget wiring', () => {
     expect(history.value.months[0].days[0].checkIns[0].source).toBe('widget');
   });
 
-  it('deep-links to the add check-in sheet when the action cannot execute', async () => {
+  it('deep-links to the add check-in sheet when a donated action cannot execute', async () => {
     const boardId = await seedBoard('archived widget board');
     const opened = await getProductCore();
     if (!opened.ok) {

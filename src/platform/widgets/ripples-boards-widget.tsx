@@ -1,13 +1,4 @@
-import {
-  Button,
-  Circle,
-  HStack,
-  Image,
-  Link,
-  Spacer,
-  Text,
-  VStack,
-} from '@expo/ui/swift-ui';
+import { Circle, HStack, Image, Link, Spacer, Text, VStack } from '@expo/ui/swift-ui';
 import {
   accessibilityLabel,
   foregroundStyle,
@@ -28,6 +19,15 @@ import type { RipplesWidgetProps, WidgetRowProps } from '@/features/widgets/widg
 // the marked function executes inside the widget extension's own sandbox:
 // every constant and helper it uses must live inside the function body,
 // because module-scope values are not serialized with it.
+//
+// the quick action deep-links to Add Check-In rather than writing in place.
+// expo-widgets runs an interactive button's App Intent inside the extension
+// process (verified on device: `openAppWhenRun: NO`, perform() logged under
+// ExpoWidgetsTarget) and posts its interaction event to that process's own
+// NotificationCenter, so the app never observes the press and no validated
+// row could be written. per the spec's rule for an action that cannot
+// safely execute, the press deep-links instead of silently doing nothing;
+// writing in place needs the native executor in the local module.
 const RipplesBoards = (props: RipplesWidgetProps, environment: WidgetEnvironment) => {
   'widget';
   const family = environment.widgetFamily;
@@ -42,15 +42,27 @@ const RipplesBoards = (props: RipplesWidgetProps, environment: WidgetEnvironment
   const rows = (props.rows ?? []).slice(0, limit);
 
   const renderRow = (row: WidgetRowProps) => {
-    const label = props.stale ? `${row.title}. Open Ripples to refresh.` : row.title;
+    // the truncated title carries the full accessibility title; each
+    // control keeps its own label, so the row never collapses into one
+    // ambiguous element
+    const titleLabel = props.stale
+      ? `${row.title}. Open Ripples to refresh.`
+      : row.title;
+    const days = row.strip.reduce((total, count) => (count > 0 ? total + 1 : total), 0);
     return (
-      <HStack key={row.boardId} modifiers={[accessibilityLabel(label)]}>
+      <HStack key={row.boardId}>
         <Image systemName={row.symbol as never} color={row.accentHex} size={14} />
-        <Link destination={`habittracker://boards/${row.boardId}`}>
+        <Link
+          destination={`habittracker://boards/${row.boardId}`}
+          modifiers={[accessibilityLabel(titleLabel)]}
+        >
           <Text modifiers={[lineLimit(1)]}>{row.title}</Text>
         </Link>
         <Spacer />
-        <HStack spacing={3}>
+        <HStack
+          spacing={3}
+          modifiers={[accessibilityLabel(`${days} of the last 7 days checked in`)]}
+        >
           {row.strip.map((count, index) => (
             <Circle
               key={index}
@@ -62,12 +74,12 @@ const RipplesBoards = (props: RipplesWidgetProps, environment: WidgetEnvironment
             />
           ))}
         </HStack>
-        <Button
-          target={`quick:${row.boardId}`}
+        <Link
+          destination={`habittracker://boards/${row.boardId}/check-ins/new`}
           modifiers={[accessibilityLabel(`Check in to ${row.title}`)]}
         >
           <Image systemName="circle" color={row.accentHex} size={16} />
-        </Button>
+        </Link>
       </HStack>
     );
   };
