@@ -6,3 +6,26 @@ export interface Clock {
 export interface IdGenerator {
   uuid(): string;
 }
+
+export type ReminderAuthorization = 'granted' | 'denied' | 'undetermined';
+
+export type ReminderScheduleRequest = {
+  reminderId: string;
+  boardId: string;
+  // iso weekday, 1 (monday) through 7 (sunday); the adapter converts to
+  // the platform's own weekday numbering
+  weekday: number;
+  minuteOfDay: number;
+  title: string;
+  body: string;
+};
+
+// the platform notification adapter: repeating weekly local notifications
+// at a wall-clock time, plus authorization and remaining native capacity
+export interface ReminderScheduler {
+  authorization(): Promise<ReminderAuthorization>;
+  requestAuthorization(): Promise<ReminderAuthorization>;
+  remainingCapacity(): Promise<number>;
+  schedule(request: ReminderScheduleRequest): Promise<string>;
+  cancel(identifiers: string[]): Promise<void>;
+}

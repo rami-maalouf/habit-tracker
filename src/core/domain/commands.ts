@@ -70,8 +70,9 @@ type CommandContext = {
 
 // every command validates before its transaction, replays its receipt when
 // retried, advances the hybrid clock once per mutation stamp, and persists
-// receipts and clock state atomically with the mutation
-async function runCommand<Value>(
+// receipts and clock state atomically with the mutation. exported for the
+// reminder command module, which shares the same envelope
+export async function runCommand<Value>(
   deps: CommandDeps,
   commandId: CommandId,
   work: (context: CommandContext) => Promise<DomainResult<Value>>,
@@ -337,7 +338,8 @@ export function archiveBoard(
     const today = currentLogicalDate(now, timeZoneId, board.startOfDayMinute);
     await updateBoardRow(tx, { ...board, archivedAt: now, updatedAt: now, mutationStamp });
     const closedPeriodIds = await closeOpenPeriod(tx, board.id, today, mutationStamp);
-    await tx.runAsync('DELETE FROM reminder_schedule WHERE reminder_id IN (SELECT id FROM reminders WHERE board_id = ?)', [board.id]);
+    // schedule rows survive the archive: they hold the native identifiers
+    // the reminder reconciler needs to actually cancel the requests
     await appendOutbox(tx, 'board', board.id, mutationStamp, now);
     for (const periodId of closedPeriodIds) {
       await appendOutbox(tx, 'activity_period', String(periodId), mutationStamp, now);

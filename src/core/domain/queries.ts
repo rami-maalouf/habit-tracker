@@ -39,9 +39,15 @@ import {
   listBoardJournal,
   monthlyCheckInTotals,
 } from '../persistence/repositories/check-ins';
+import {
+  countEnabledActiveReminders,
+  getReminderById as getReminderRow,
+  listBoardReminders as listBoardReminderRows,
+  listRemindersForReconcile,
+} from '../persistence/repositories/reminders';
 import { getSettings, listBoardPeriods } from '../persistence/repositories/support';
-import type { Board, CheckIn, WidgetBoardRow } from './entities';
-import type { BoardId, CheckInId, LogicalDate } from './ids';
+import type { Board, CheckIn, Reminder, WidgetBoardRow } from './entities';
+import type { BoardId, CheckInId, LogicalDate, ReminderId } from './ids';
 import type { Clock } from './ports';
 import type { DomainResult } from './result';
 import { err, ok } from './result';
@@ -579,4 +585,46 @@ export function getMetricsEducationDismissed(
 
 export function getAppSettings(deps: QueryDeps) {
   return runQuery(deps, (tx) => getSettings(tx));
+}
+
+// --- reminders --------------------------------------------------------------
+
+export function listBoardReminders(
+  deps: QueryDeps,
+  boardId: BoardId,
+): Promise<DomainResult<Reminder[]>> {
+  return runQuery(deps, (tx) => listBoardReminderRows(tx, boardId));
+}
+
+export function getReminder(
+  deps: QueryDeps,
+  reminderId: ReminderId,
+): Promise<DomainResult<Reminder | null>> {
+  return runQuery(deps, (tx) => getReminderRow(tx, reminderId));
+}
+
+export type NotificationOverview = {
+  enabledReminderCount: number;
+  // reminders whose last schedule attempt failed or was denied, for the
+  // settings surface
+  scheduleErrors: { reminderId: ReminderId; boardTitle: string; code: string }[];
+};
+
+export function getNotificationOverview(
+  deps: QueryDeps,
+): Promise<DomainResult<NotificationOverview>> {
+  return runQuery(deps, async (tx) => {
+    const enabledReminderCount = await countEnabledActiveReminders(tx);
+    const scheduleErrors: NotificationOverview['scheduleErrors'] = [];
+    for (const entry of await listRemindersForReconcile(tx)) {
+      if (entry.reminder.scheduleState === 'error') {
+        scheduleErrors.push({
+          reminderId: entry.reminder.id,
+          boardTitle: entry.boardTitle,
+          code: entry.reminder.lastScheduleError ?? 'unknown',
+        });
+      }
+    }
+    return { enabledReminderCount, scheduleErrors };
+  });
 }

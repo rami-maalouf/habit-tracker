@@ -239,10 +239,8 @@ export async function tombstoneBoardGraph(
     'UPDATE board_activity_periods SET deleted_at = ?, mutation_stamp = ? WHERE board_id = ? AND deleted_at IS NULL',
     [deletedAt, mutationStamp, boardId],
   );
-  await tx.runAsync(
-    'DELETE FROM reminder_schedule WHERE reminder_id IN (SELECT id FROM reminders WHERE board_id = ?)',
-    [boardId],
-  );
+  // schedule rows are kept: they hold the native identifiers the reminder
+  // reconciler cancels before clearing the orphaned rows
   return {
     checkInIds: checkIns.map((row) => row.id),
     reminderIds: reminders.map((row) => row.id),
