@@ -22,11 +22,6 @@ export function productDatabaseDirectory(): string | undefined {
   }
 }
 
-// wraps expo-sqlite behind the SqlDatabase port; this is the only typescript
-// location that imports expo-sqlite. writes run on a dedicated second
-// connection where foreign keys are enabled at connection level and a mutex
-// keeps exclusive transactions from interleaving with other statements;
-// reads use the primary connection with deferred transactions.
 // installs that predate the app group entitlement created the database in
 // the default sqlite location; the first open after the entitlement lands
 // moves the files (with wal and shm) into the shared container so the app
@@ -50,6 +45,11 @@ function relocateLegacyDatabase(containerUri: string): void {
   }
 }
 
+// wraps expo-sqlite behind the SqlDatabase port; this is the only typescript
+// location that imports expo-sqlite. writes run on a dedicated second
+// connection where foreign keys are enabled at connection level and a mutex
+// keeps exclusive transactions from interleaving with other statements;
+// reads use the primary connection with deferred transactions.
 export async function openProductSqlDatabase(): Promise<SqlDatabase> {
   const directory = productDatabaseDirectory();
   if (directory !== undefined) {
