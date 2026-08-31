@@ -62,6 +62,7 @@ export function BoardCard({
         label={card.board.title}
         hint="Opens the board"
         disabled={!onOpen}
+        stretch
         style={{ flex: 1 }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>

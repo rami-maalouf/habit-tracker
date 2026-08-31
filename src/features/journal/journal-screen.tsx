@@ -90,6 +90,7 @@ export function JournalScreen({ boardId }: { boardId: BoardId }) {
                 disabled={archived}
                 label={`Journal entry, ${meta}. ${item.note ?? ''}`}
                 hint={archived ? undefined : 'Opens this check-in'}
+                stretch
                 testID={`journal-entry-${item.id}`}
               >
                 <View

@@ -511,7 +511,7 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
         </FormRow>
 
         <FormRow>
-          <ProductPressable label="Add reminder" disabled testID="add-reminder-row">
+          <ProductPressable label="Add reminder" disabled stretch testID="add-reminder-row">
             <AppText selectable={false}>Add reminder…</AppText>
           </ProductPressable>
           <AppText variant="footnote">Reminders arrive with the reminders update.</AppText>
@@ -523,6 +523,7 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
               router.push(editing && boardId ? `/boards/${boardId}/options` : '/boards/draft/options')
             }
             label="Options"
+            stretch
             testID="open-options"
           >
             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>

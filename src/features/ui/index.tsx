@@ -20,6 +20,8 @@ type ProductPressableProps = {
   role?: AccessibilityRole;
   selected?: boolean;
   testID?: string;
+  // full-width row pressables opt out of horizontal content centering
+  stretch?: boolean;
   style?: StyleProp<ViewStyle> | ((state: { pressed: boolean }) => StyleProp<ViewStyle>);
   children: ReactNode;
 };
@@ -33,6 +35,7 @@ export function ProductPressable({
   role = 'button',
   selected,
   testID,
+  stretch,
   style,
   children,
 }: ProductPressableProps) {
@@ -59,7 +62,8 @@ export function ProductPressable({
           typeof flat.minWidth === 'number' ? flat.minWidth : 0,
         );
         return [
-          { justifyContent: 'center' },
+          // glyph buttons center inside their 44-point target; rows stretch
+          { justifyContent: 'center', alignItems: stretch ? 'stretch' : 'center' },
           state.pressed ? { opacity: 0.6 } : null,
           disabled ? { opacity: 0.4 } : null,
           resolved,
@@ -85,7 +89,7 @@ export function PrimaryButton({ title, onPress, disabled, destructive, testID }:
   const background = destructive ? semanticColor('destructive', scheme) : brand.accent[scheme];
   const color = destructive ? semanticColor('onDestructive', scheme) : brand.onAccent[scheme];
   return (
-    <ProductPressable onPress={onPress} disabled={disabled} label={title} testID={testID}>
+    <ProductPressable onPress={onPress} disabled={disabled} label={title} testID={testID} stretch>
       <View
         style={{
           backgroundColor: background,

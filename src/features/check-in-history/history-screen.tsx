@@ -191,6 +191,7 @@ export function CheckInHistoryScreen({ boardId }: { boardId: BoardId }) {
                 disabled={archived}
                 label={`${record?.title ?? 'Check-in'}${detailParts.length > 0 ? `, ${detailParts.join(', ')}` : ''}`}
                 hint={archived ? undefined : 'Opens this check-in'}
+                stretch
                 testID={`check-in-row-${item.id}`}
               >
                 <View

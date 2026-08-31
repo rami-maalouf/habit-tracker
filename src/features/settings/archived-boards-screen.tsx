@@ -42,6 +42,7 @@ export function ArchivedBoardsScreen() {
                   onPress={() => router.push(`/boards/${board.id}`)}
                   label={`${board.title}, archived board`}
                   hint="Opens the archived board to restore or delete it"
+                  stretch
                   testID={`archived-board-${board.id}`}
                 >
                   <View

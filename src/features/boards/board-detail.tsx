@@ -272,6 +272,7 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
             <ProductPressable
               onPress={() => setExamplesOpen((current) => !current)}
               label="Look at example boards"
+              stretch
               testID="example-boards"
             >
               <AppText variant="headline" selectable={false}>
@@ -299,6 +300,7 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
                 });
               }}
               label="Dismiss metrics education"
+              stretch
               testID="dismiss-education"
             >
               <AppText variant="subheadline" selectable={false}>

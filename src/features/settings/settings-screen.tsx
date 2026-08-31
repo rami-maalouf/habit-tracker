@@ -23,6 +23,7 @@ export function SettingsScreen() {
           onPress={() => router.push('/settings/archived')}
           label="Archived Boards"
           hint="Opens the archived boards list"
+          stretch
           testID="open-archived-boards"
         >
           <View
