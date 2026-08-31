@@ -1,7 +1,12 @@
+import {
+  BottomSheet,
+  BottomSheetView,
+  type BottomSheetMethods,
+} from '@expo/ui/community/bottom-sheet';
 import { DateTimePicker } from '@expo/ui/community/datetime-picker';
-import { Stack, useNavigation, useRouter } from 'expo-router';
+import { useNavigation, useRouter } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, type MutableRefObject } from 'react';
 import { Alert, ScrollView, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
@@ -96,10 +101,16 @@ function instantFor(
 
 export function CheckInFormScreen({ boardId, checkInId }: CheckInFormScreenProps) {
   const router = useRouter();
+  const scheme = useScheme();
   const { core } = useProduct();
   // conflicts remount the body with the reloaded record, so the notice
   // lives here where the remount cannot wipe it
   const [conflict, setConflict] = useState(false);
+  const sheetRef = useRef<BottomSheetMethods>(null);
+  // the sheet closes natively before react hears about it, so the dirty
+  // guard reads a ref the body keeps current instead of body state
+  const dirtyRef = useRef(false);
+  const skipGuardRef = useRef(false);
   const board = useProductQuery((c) => getBoard(c, boardId), [boardId]);
   const existing = useProductQuery(
     (c) =>
@@ -107,9 +118,38 @@ export function CheckInFormScreen({ boardId, checkInId }: CheckInFormScreenProps
     [checkInId],
   );
 
+  // a pan-down or backdrop tap already dismissed the native sheet; either
+  // leave the route, or reopen the sheet when unsaved edits need a decision
+  const closeFromSheet = useCallback(() => {
+    if (skipGuardRef.current) {
+      return;
+    }
+    if (dirtyRef.current) {
+      Alert.alert('Discard changes?', 'Your edits to this check-in are not saved.', [
+        {
+          text: 'Keep editing',
+          style: 'cancel',
+          onPress: () => sheetRef.current?.present(),
+        },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => {
+            skipGuardRef.current = true;
+            router.back();
+          },
+        },
+      ]);
+      return;
+    }
+    skipGuardRef.current = true;
+    router.back();
+  }, [router]);
+
   const loadedRecord =
     checkInId && existing.status === 'ready' ? existing.value : null;
 
+  let content;
   if (
     board.status === 'error' ||
     (checkInId && existing.status === 'error') ||
@@ -117,7 +157,7 @@ export function CheckInFormScreen({ boardId, checkInId }: CheckInFormScreenProps
     // a record reached through a mismatched board url is not exposed
     (loadedRecord && loadedRecord.boardId !== boardId)
   ) {
-    return (
+    content = (
       <View style={{ flex: 1, justifyContent: 'center', padding: spacing.xl, gap: spacing.lg }}>
         <AppText variant="title2" accessibilityRole="header">
           This record is not available.
@@ -125,16 +165,12 @@ export function CheckInFormScreen({ boardId, checkInId }: CheckInFormScreenProps
         <PrimaryButton title="Back to Boards" onPress={() => router.dismissTo('/')} />
       </View>
     );
-  }
-
-  if (board.status !== 'ready' || (checkInId && existing.status !== 'ready')) {
-    return <View testID="check-in-form-loading" style={{ flex: 1 }} />;
-  }
-
-  // an archived board is read-only: direct links to its check-in forms
-  // land on an explanation instead of an editable form
-  if (board.value.archivedAt !== null) {
-    return (
+  } else if (board.status !== 'ready' || (checkInId && existing.status !== 'ready')) {
+    content = <View testID="check-in-form-loading" style={{ flex: 1 }} />;
+  } else if (board.value.archivedAt !== null) {
+    // an archived board is read-only: direct links to its check-in forms
+    // land on an explanation instead of an editable form
+    content = (
       <View
         style={{ flex: 1, justifyContent: 'center', padding: spacing.xl, gap: spacing.lg }}
         testID="check-in-archived-board"
@@ -146,32 +182,46 @@ export function CheckInFormScreen({ boardId, checkInId }: CheckInFormScreenProps
         <PrimaryButton title="Back to Boards" onPress={() => router.dismissTo('/')} />
       </View>
     );
+  } else {
+    content = (
+      <View style={{ flex: 1 }}>
+        {conflict ? (
+          <View style={{ padding: spacing.lg }}>
+            <AppText testID="check-in-conflict">
+              This check-in changed elsewhere. The latest values are shown - review your changes
+              and save again.
+            </AppText>
+          </View>
+        ) : null}
+        <CheckInFormBody
+          // a reloaded record reseeds every field, so a conflict retry carries
+          // the fresh mutation stamp instead of failing forever
+          key={loadedRecord ? loadedRecord.mutationStamp : 'new'}
+          board={board.value}
+          record={loadedRecord}
+          onConflict={() => setConflict(true)}
+          dirtyRef={dirtyRef}
+          skipGuardRef={skipGuardRef}
+          today={currentLogicalDate(
+            core.clock.nowUtcMs(),
+            core.clock.timeZoneId(),
+            board.value.startOfDayMinute,
+          )}
+        />
+      </View>
+    );
   }
 
   return (
-    <View style={{ flex: 1 }}>
-      {conflict ? (
-        <View style={{ padding: spacing.lg }}>
-          <AppText testID="check-in-conflict">
-            This check-in changed elsewhere. The latest values are shown - review your changes
-            and save again.
-          </AppText>
-        </View>
-      ) : null}
-      <CheckInFormBody
-        // a reloaded record reseeds every field, so a conflict retry carries
-        // the fresh mutation stamp instead of failing forever
-        key={loadedRecord ? loadedRecord.mutationStamp : 'new'}
-        board={board.value}
-        record={loadedRecord}
-        onConflict={() => setConflict(true)}
-        today={currentLogicalDate(
-          core.clock.nowUtcMs(),
-          core.clock.timeZoneId(),
-          board.value.startOfDayMinute,
-        )}
-      />
-    </View>
+    <BottomSheet
+      ref={sheetRef}
+      snapPoints={['50%', '100%']}
+      enablePanDownToClose
+      onClose={closeFromSheet}
+      backgroundStyle={{ backgroundColor: semanticColor('groupedBackground', scheme) as string }}
+    >
+      <BottomSheetView style={{ flex: 1 }}>{content}</BottomSheetView>
+    </BottomSheet>
   );
 }
 
@@ -181,19 +231,31 @@ function CheckInFormBody({
   record,
   today,
   onConflict,
+  dirtyRef,
+  skipGuardRef,
 }: {
   board: Board;
   record: CheckIn | null;
   today: LogicalDate;
   onConflict: () => void;
+  dirtyRef: MutableRefObject<boolean>;
+  skipGuardRef: MutableRefObject<boolean>;
 }) {
   const router = useRouter();
   const navigation = useNavigation();
   const scheme = useScheme();
   const { core, invalidate, nextCommandId } = useProduct();
   const deviceZone = core.clock.timeZoneId();
-  const [dirty, setDirty] = useState(false);
-  const skipGuardRef = useRef(false);
+  const [dirty, setDirtyState] = useState(false);
+  // the parent's sheet-close guard reads the ref; react state still drives
+  // the removal guard below
+  const setDirty = useCallback(
+    (value: boolean) => {
+      setDirtyState(value);
+      dirtyRef.current = value;
+    },
+    [dirtyRef],
+  );
   const [logicalDate, setLogicalDate] = useState<LogicalDate>(record?.logicalDate ?? today);
   // time is stored as a wall-clock time of day and recombined with the
   // selected date at save, so a historical date never carries today's instant
@@ -264,7 +326,7 @@ function CheckInFormBody({
         );
       }
     },
-    [board.tracksTime, core, deviceZone, timeTouched, today],
+    [board.tracksTime, core, deviceZone, setDirty, timeTouched, today],
   );
 
   const save = useCallback(async () => {
@@ -322,7 +384,7 @@ function CheckInFormBody({
     }
     setError(result.error);
     setSaving(false);
-  }, [amountText, board, core, deviceZone, invalidate, logicalDate, nextCommandId, note, occurrenceEdited, onConflict, record, router, saving, timeOfDay]);
+  }, [amountText, board, core, deviceZone, invalidate, logicalDate, nextCommandId, note, occurrenceEdited, onConflict, record, router, saving, skipGuardRef, timeOfDay]);
 
   const confirmDelete = useCallback(() => {
     if (!record) {
@@ -348,7 +410,7 @@ function CheckInFormBody({
         },
       },
     ]);
-  }, [core, invalidate, nextCommandId, record, router]);
+  }, [core, invalidate, nextCommandId, record, router, skipGuardRef]);
 
   const colors = deriveBoardColors(board.accentHex, scheme);
   const timePickerValue =
@@ -363,23 +425,28 @@ function CheckInFormBody({
 
   return (
     <View style={{ flex: 1, backgroundColor: semanticColor('groupedBackground', scheme) }}>
-      <Stack.Screen
-        options={{
-          title: record ? 'Edit Check-in' : 'Add Check-in',
-          headerLeft: () => (
-            <ProductPressable onPress={() => router.back()} label="Cancel" testID="check-in-cancel">
-              <AppText selectable={false}>Cancel</AppText>
-            </ProductPressable>
-          ),
-          headerRight: () => (
-            <ProductPressable onPress={save} label="Save check-in" testID="check-in-save">
-              <AppText variant="headline" selectable={false}>
-                Save
-              </AppText>
-            </ProductPressable>
-          ),
+      {/* the sheet has no navigator header, so the bar lives in content */}
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          paddingHorizontal: spacing.lg,
+          paddingTop: spacing.lg,
         }}
-      />
+      >
+        <ProductPressable onPress={() => router.back()} label="Cancel" testID="check-in-cancel">
+          <AppText selectable={false}>Cancel</AppText>
+        </ProductPressable>
+        <AppText variant="headline" accessibilityRole="header" selectable={false}>
+          {record ? 'Edit Check-in' : 'Add Check-in'}
+        </AppText>
+        <ProductPressable onPress={save} label="Save check-in" testID="check-in-save">
+          <AppText variant="headline" selectable={false}>
+            Save
+          </AppText>
+        </ProductPressable>
+      </View>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}
@@ -423,6 +490,7 @@ function CheckInFormBody({
               maximumDate={dateFromLogical(today)}
               accentColor={colors.accent}
               onValueChange={(_event, date) => changeDate(date)}
+              style={{ width: 150, height: 36 }}
               testID="check-in-date"
             />
           </View>
@@ -433,6 +501,7 @@ function CheckInFormBody({
                 value={timePickerValue}
                 mode="time"
                 display="compact"
+                style={{ width: 110, height: 36 }}
                 accentColor={colors.accent}
                 onValueChange={(_event, date) => {
                   setTimeOfDay({
