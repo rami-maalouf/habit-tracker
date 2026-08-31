@@ -118,20 +118,24 @@ export function parseOwnExport(json: string): DomainResult<ImportDraft> {
       createdAtUtc: typeof board.createdAtUtc === 'number' ? board.createdAtUtc : 0,
       archivedAtUtc: typeof board.archivedAtUtc === 'number' ? board.archivedAtUtc : null,
       preserveId: true,
-      // period entries are shape-checked here; the import command distrusts
-      // the whole list if the dates themselves are incoherent
+      // malformed period entries are kept as invalid sentinels instead of
+      // silently dropped, so the import command distrusts the whole list
+      // and falls back to a derived lifetime period
       periods: Array.isArray(board.periods)
-        ? board.periods
-            .filter(
-              (period): period is Record<string, unknown> =>
-                typeof period === 'object' &&
-                period !== null &&
-                typeof (period as Record<string, unknown>).startDate === 'string',
-            )
-            .map((period) => ({
-              startDate: period.startDate as string,
-              endDate: typeof period.endDate === 'string' ? period.endDate : null,
-            }))
+        ? board.periods.map((period) => {
+            if (
+              typeof period !== 'object' ||
+              period === null ||
+              typeof (period as Record<string, unknown>).startDate !== 'string'
+            ) {
+              return { startDate: 'invalid', endDate: null };
+            }
+            const record = period as Record<string, unknown>;
+            return {
+              startDate: record.startDate as string,
+              endDate: typeof record.endDate === 'string' ? record.endDate : null,
+            };
+          })
         : null,
       orderKey: typeof board.orderKey === 'string' ? board.orderKey : null,
     });

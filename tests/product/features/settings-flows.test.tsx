@@ -69,6 +69,13 @@ describe('settings sheet', () => {
     expect(screen.getByTestId('settings-link-notice')).toHaveTextContent(
       'Missing release link for Request feature or report issue.',
     );
+    // the notice must render above the scroll content, or a tap near the
+    // top of a long settings list appears to do nothing
+    const rendered = JSON.stringify(screen.toJSON());
+    expect(rendered.indexOf('settings-link-notice')).toBeGreaterThan(-1);
+    expect(rendered.indexOf('settings-link-notice')).toBeLessThan(
+      rendered.indexOf('settings-notifications'),
+    );
   });
 
   it('exports a shareable snapshot after the privacy confirmation', async () => {

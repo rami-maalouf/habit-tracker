@@ -801,7 +801,12 @@ export function importSnapshot(
       const createdAt = Math.min(draft.createdAtUtc, now);
       const archivedAt =
         draft.archivedAtUtc === null ? null : Math.min(draft.archivedAtUtc, now);
-      const orderKey = draft.orderKey ?? orderKeyAfter(lastKey);
+      // a preserved key must stay inside the generator's base-36 alphabet;
+      // anything else would poison the high-water mark and break every
+      // later generated key, so a malformed key is regenerated instead
+      const preservedKey =
+        draft.orderKey !== null && /^[0-9a-z]+$/.test(draft.orderKey) ? draft.orderKey : null;
+      const orderKey = preservedKey ?? orderKeyAfter(lastKey);
       // every used key folds into the high-water mark, preserved ones
       // included, so later generated keys cannot collide or interleave
       if (lastKey === null || orderKey > lastKey) {
@@ -921,6 +926,9 @@ export function importSnapshot(
       // stored occurrence sits in the future
       const storedInstant =
         meta.tracksTime && instant !== null ? Math.min(instant, now) : null;
+      // a clamp moved the occurrence, so the recorded offset no longer
+      // describes it; recompute in the record's own zone
+      const instantClamped = storedInstant !== null && storedInstant !== instant;
       const checkIn: CheckIn = {
         id: checkInId,
         boardId,
@@ -931,7 +939,9 @@ export function importSnapshot(
         offsetMinutes:
           storedInstant === null
             ? null
-            : (draft.offsetMinutes ?? offsetMinutesAt(storedInstant, timeZoneId)),
+            : instantClamped
+              ? offsetMinutesAt(storedInstant, draft.timeZoneId ?? timeZoneId)
+              : (draft.offsetMinutes ?? offsetMinutesAt(storedInstant, timeZoneId)),
         amount: amountResult !== null && amountResult.ok ? amountResult.value : null,
         // an over-long note is dropped, not a reason to lose the record
         note: note.ok ? note.value : null,

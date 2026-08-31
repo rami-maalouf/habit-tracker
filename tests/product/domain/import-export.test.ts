@@ -1,4 +1,4 @@
-import { archiveBoard, createCheckIn, deleteBoard, importSnapshot } from '@/core/domain/commands';
+import { archiveBoard, createCheckIn, deleteBoard, importSnapshot, removeCheckIn } from '@/core/domain/commands';
 import { createReminder } from '@/core/domain/reminder-commands';
 import { listBoardReminders } from '@/core/domain/queries';
 
@@ -484,7 +484,11 @@ describe('own export round trip', () => {
     }
     expect(parsed.value.boards).toHaveLength(1);
     expect(parsed.value.boards[0].title).toBe('survivor');
+    // malformed entries survive as invalid sentinels so the command
+    // distrusts the list and derives a lifetime period instead
     expect(parsed.value.boards[0].periods).toEqual([
+      { startDate: 'invalid', endDate: null },
+      { startDate: 'invalid', endDate: null },
       { startDate: '2026-08-01', endDate: null },
     ]);
     expect(parsed.value.checkIns).toHaveLength(1);
@@ -1266,5 +1270,195 @@ describe('reminder import edges', () => {
         createdAtUtc: 0,
       },
     ]);
+  });
+});
+
+describe('sol confirmation follow-ups', () => {
+  it('skips a tombstoned check-in id on a live board through the raw check', async () => {
+    const harness = await createTestHarness();
+    const boardId = await createBoardForTest(harness, { title: 'live board' });
+    const created = await createCheckIn(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+      logicalDate: '2026-08-29' as LogicalDate,
+      source: 'app',
+    });
+    if (!created.ok) {
+      throw new Error(created.error.message);
+    }
+    const removed = await removeCheckIn(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      checkInId: created.value.checkInId,
+    });
+    if (!removed.ok) {
+      throw new Error(removed.error.message);
+    }
+    // the file still contains the deleted check-in; its id is occupied by
+    // the tombstone, so the record skips and the deletion stands
+    const result = await importSnapshot(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      draft: {
+        source: 'own',
+        reminders: [],
+        boards: [
+          {
+            sourceId: boardId,
+            title: 'live board',
+            symbol: 'star.fill',
+            accentHex: '#78D98B',
+            usesTintedBackground: true,
+            tracksAmount: false,
+            amountUnit: null,
+            quickAmount: 1,
+            tracksTime: false,
+            startOfDayMinute: 0,
+            metricsEnabled: true,
+            createdAtUtc: Date.UTC(2026, 7, 1, 12),
+            archivedAtUtc: null,
+            preserveId: true,
+            periods: null,
+            orderKey: null,
+          },
+        ],
+        checkIns: [
+          {
+            sourceId: created.value.checkInId,
+            sourceBoardId: boardId,
+            occurredAtUtc: null,
+            createdAtUtc: Date.UTC(2026, 7, 2),
+            amount: null,
+            note: null,
+            logicalDate: '2026-08-29',
+            timeZoneId: null,
+            offsetMinutes: null,
+            preserveId: true,
+          },
+        ],
+      },
+    });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(result.value.boardsSkipped).toBe(1);
+    expect(result.value.checkInsSkipped).toBe(1);
+    const history = await getGroupedCheckInHistory(harness.deps, boardId);
+    expect(history.ok && history.value.months).toHaveLength(0);
+    await harness.db.closeAsync();
+  });
+
+  it('regenerates malformed preserved order keys instead of folding them in', async () => {
+    const harness = await createTestHarness();
+    const board = (sourceId: string, title: string, orderKey: string | null) => ({
+      sourceId,
+      title,
+      symbol: 'star.fill',
+      accentHex: '#78D98B',
+      usesTintedBackground: true,
+      tracksAmount: false,
+      amountUnit: null,
+      quickAmount: 1,
+      tracksTime: false,
+      startOfDayMinute: 0,
+      metricsEnabled: true,
+      createdAtUtc: Date.UTC(2026, 7, 1, 12),
+      archivedAtUtc: null,
+      preserveId: true,
+      periods: null,
+      orderKey,
+    });
+    const result = await importSnapshot(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      draft: {
+        source: 'own',
+        reminders: [],
+        checkIns: [],
+        boards: [
+          // outside the base-36 alphabet: would poison the generator
+          board('00000000-0000-4000-8000-0000000000f1', 'poison key', '~~~ZZ'),
+          board('00000000-0000-4000-8000-0000000000f2', 'good key', 'm5'),
+          board('00000000-0000-4000-8000-0000000000f3', 'generated', null),
+        ],
+      },
+    });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(result.value.boardsCreated).toBe(3);
+    const active = await listActiveBoards(harness.deps);
+    if (!active.ok) {
+      throw new Error('boards failed');
+    }
+    // the malformed key regenerated; ordering stays deterministic and the
+    // generated keys sort after the highest valid key
+    const titles = active.value.map((entry) => entry.title);
+    expect(titles.indexOf('good key')).toBeLessThan(titles.indexOf('generated'));
+    expect(titles.indexOf('poison key')).toBeLessThan(titles.indexOf('generated'));
+    for (const entry of active.value) {
+      expect(entry.orderKey).toMatch(/^[0-9a-z]+$/);
+    }
+    await harness.db.closeAsync();
+  });
+
+  it('recomputes the offset when a future instant is clamped', async () => {
+    const harness = await createTestHarness();
+    const now = harness.clock.nowUtcMs();
+    const result = await importSnapshot(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      draft: {
+        source: 'own',
+        reminders: [],
+        boards: [
+          {
+            sourceId: '00000000-0000-4000-8000-0000000000f5',
+            title: 'clamped offset',
+            symbol: 'star.fill',
+            accentHex: '#78D98B',
+            usesTintedBackground: true,
+            tracksAmount: false,
+            amountUnit: null,
+            quickAmount: 1,
+            tracksTime: true,
+            startOfDayMinute: 0,
+            metricsEnabled: true,
+            createdAtUtc: Date.UTC(2026, 7, 1, 12),
+            archivedAtUtc: null,
+            preserveId: true,
+            periods: null,
+            orderKey: null,
+          },
+        ],
+        checkIns: [
+          {
+            sourceId: '00000000-0000-4000-8000-0000000000f6',
+            sourceBoardId: '00000000-0000-4000-8000-0000000000f5',
+            occurredAtUtc: now + 5 * 60 * 1000,
+            createdAtUtc: now,
+            amount: null,
+            note: null,
+            logicalDate: '2026-08-30',
+            // an offset that matches neither the clamped instant nor the
+            // device zone must not survive the clamp
+            timeZoneId: 'Asia/Tokyo',
+            offsetMinutes: -999,
+            preserveId: true,
+          },
+        ],
+      },
+    });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    const history = await getGroupedCheckInHistory(
+      harness.deps,
+      '00000000-0000-4000-8000-0000000000f5' as never,
+    );
+    if (!history.ok) {
+      throw new Error('history failed');
+    }
+    const record = history.value.months[0].days[0].checkIns[0];
+    expect(record.occurredAtUtc).toBe(now);
+    // tokyo is utc+9
+    expect(record.offsetMinutes).toBe(540);
+    await harness.db.closeAsync();
   });
 });
