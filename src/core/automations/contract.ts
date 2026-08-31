@@ -3,16 +3,13 @@
 // executors. one json fixture suite drives all of them, so a native
 // implementation can never fork product semantics.
 import { currentLogicalDate } from '../calendar/logical-date';
-import { createCheckIn, removeCheckIn } from '../domain/commands';
+import { createCheckIn, removeLatestCheckIn } from '../domain/commands';
 import type { CommandDeps } from '../domain/commands';
 import type { BoardId, CommandId, LogicalDate } from '../domain/ids';
 import type { DomainResult } from '../domain/result';
 import { err, ok } from '../domain/result';
 import { getBoardById, listActiveBoards } from '../persistence/repositories/boards';
-import {
-  latestCheckInForDate,
-  listBoardCheckInsForDate,
-} from '../persistence/repositories/check-ins';
+import { listBoardCheckInsForDate } from '../persistence/repositories/check-ins';
 
 export type AutomationSource = 'shortcut' | 'siri';
 
@@ -56,35 +53,52 @@ export type CheckInIntentInput = {
 
 export type CheckInIntentResult = { checkInId: string; logicalDate: string };
 
+// a board read that turns a transport failure into an actionable result
+// instead of a rejected promise a native executor would have to catch
+async function readActiveBoard(
+  deps: Pick<CommandDeps, 'db'>,
+  boardId: BoardId,
+): Promise<DomainResult<Awaited<ReturnType<typeof getBoardById>>>> {
+  try {
+    return ok(await deps.db.withTransactionAsync((tx) => getBoardById(tx, boardId)));
+  } catch (cause) {
+    return err('database', `That board could not be read: ${describe(cause)}`, {
+      retryable: true,
+    });
+  }
+}
+
 export function runCheckInIntent(
   deps: CommandDeps,
   input: CheckInIntentInput,
 ): Promise<DomainResult<CheckInIntentResult>> {
   return (async () => {
-    const board = await deps.db.withTransactionAsync((tx) => getBoardById(tx, input.boardId));
-    if (!board) {
+    const board = await readActiveBoard(deps, input.boardId);
+    if (!board.ok) {
+      return board;
+    }
+    if (!board.value) {
       return err('not_found', 'That board is not available.');
     }
-    if (board.archivedAt !== null) {
+    if (board.value.archivedAt !== null) {
       return err('archived', 'That board is archived. Restore it to check in.');
     }
-    const logicalDate =
-      input.logicalDate ??
-      currentLogicalDate(deps.clock.nowUtcMs(), deps.clock.timeZoneId(), board.startOfDayMinute);
+    // the date is NOT resolved here: the command defaults it inside its own
+    // receipt, so a retry that crosses midnight replays the original date
     const result = await createCheckIn(deps, {
       commandId: input.commandId,
       boardId: input.boardId,
-      logicalDate,
+      logicalDate: input.logicalDate,
       occurredAtUtc: input.occurredAtUtc,
       // an omitted amount falls back to the board's quick amount
-      amount: board.tracksAmount ? (input.amount ?? board.quickAmount) : undefined,
+      amount: board.value.tracksAmount ? (input.amount ?? board.value.quickAmount) : undefined,
       note: input.note,
       source: input.source,
     });
     if (!result.ok) {
       return result;
     }
-    return ok({ checkInId: result.value.checkInId, logicalDate });
+    return ok({ checkInId: result.value.checkInId, logicalDate: result.value.logicalDate });
   })();
 }
 
@@ -101,31 +115,27 @@ export function runRemoveLatestIntent(
   input: RemoveLatestInput,
 ): Promise<DomainResult<{ removedCheckInId: string }>> {
   return (async () => {
-    const board = await deps.db.withTransactionAsync((tx) => getBoardById(tx, input.boardId));
-    if (!board) {
+    const board = await readActiveBoard(deps, input.boardId);
+    if (!board.ok) {
+      return board;
+    }
+    if (!board.value) {
       return err('not_found', 'That board is not available.');
     }
-    if (board.archivedAt !== null) {
+    if (board.value.archivedAt !== null) {
       return err('archived', 'That board is archived. Restore it to change check-ins.');
     }
-    const logicalDate =
-      input.logicalDate ??
-      currentLogicalDate(deps.clock.nowUtcMs(), deps.clock.timeZoneId(), board.startOfDayMinute);
-    // the history ordering rule picks the latest record for that date
-    const latest = await deps.db.withTransactionAsync((tx) =>
-      latestCheckInForDate(tx, input.boardId, logicalDate),
-    );
-    if (!latest) {
-      return err('not_found', 'There is no check-in to remove for that day.');
-    }
-    const removed = await removeCheckIn(deps, {
+    // the command resolves the target by the history ordering rule inside
+    // its own receipt, so a retry replays the same removal
+    const removed = await removeLatestCheckIn(deps, {
       commandId: input.commandId,
-      checkInId: latest.id,
+      boardId: input.boardId,
+      logicalDate: input.logicalDate,
     });
     if (!removed.ok) {
       return removed;
     }
-    return ok({ removedCheckInId: latest.id });
+    return ok({ removedCheckInId: removed.value.removedCheckInId });
   })();
 }
 
@@ -150,6 +160,11 @@ export function runTodayCheckInsIntent(
           input.boardId === undefined
             ? boards
             : boards.filter((board) => board.id === input.boardId);
+        // an archived, deleted, or unknown board is an actionable failure,
+        // never a silent empty answer
+        if (input.boardId !== undefined && scoped.length === 0) {
+          return null;
+        }
         const rows: { title: string; count: number }[] = [];
         let total = 0;
         for (const board of scoped) {
@@ -164,6 +179,9 @@ export function runTodayCheckInsIntent(
         }
         return { boards: rows, total };
       });
+      if (value === null) {
+        return err('not_found', 'That board is not available.');
+      }
       return ok(value);
     } catch (cause) {
       return err('database', `Today's check-ins could not be read: ${describe(cause)}`, {

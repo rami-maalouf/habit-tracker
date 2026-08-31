@@ -183,7 +183,33 @@ export async function listBoardJournal(tx: SqlExecutor, boardId: BoardId): Promi
   return rows.map(toCheckIn);
 }
 
-// count per logical date, bounded by an inclusive range
+// one grouped read for every active board's recent days, so the home
+// projection never issues a query per board
+export async function dailyCountsForBoards(
+  tx: SqlExecutor,
+  from: LogicalDate,
+  to: LogicalDate,
+): Promise<Map<string, Map<string, number>>> {
+  const rows = await tx.getAllAsync<{
+    board_id: string;
+    logical_date: string;
+    count: number;
+  }>(
+    `SELECT board_id, logical_date, COUNT(*) AS count FROM check_ins
+     WHERE deleted_at IS NULL AND logical_date BETWEEN ? AND ?
+     GROUP BY board_id, logical_date`,
+    [from, to],
+  );
+  const byBoard = new Map<string, Map<string, number>>();
+  for (const row of rows) {
+    const existing = byBoard.get(row.board_id) ?? new Map<string, number>();
+    existing.set(row.logical_date, row.count);
+    byBoard.set(row.board_id, existing);
+  }
+  return byBoard;
+}
+
+// count per logical date for one board, bounded by an inclusive range
 export async function dailyCounts(
   tx: SqlExecutor,
   boardId: BoardId,

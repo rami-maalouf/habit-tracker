@@ -31,6 +31,7 @@ import {
   countBoardCheckIns,
   countBoardNotes,
   dailyCounts,
+  dailyCountsForBoards,
   earliestCheckInDate,
   getCheckInById,
   latestCheckInForDate,
@@ -152,17 +153,30 @@ export function getHomeBoardProjection(
 ): Promise<DomainResult<HomeBoardCard[]>> {
   return runQuery(deps, async (tx, now, timeZoneId) => {
     const boards = await listActiveBoardRows(tx);
-    const cards: HomeBoardCard[] = [];
-    for (const board of boards) {
-      const today = boardToday(board, now, timeZoneId);
-      const counts = await dailyCounts(tx, board.id, addDays(today, -6), today);
+    if (boards.length === 0) {
+      return [];
+    }
+    // boards can carry different start-of-day shifts, so their logical
+    // todays differ; one grouped read spans the widest window and each
+    // card then reads its own seven days out of it
+    const todays = boards.map((board) => boardToday(board, now, timeZoneId));
+    // logical dates are iso strings, so a lexicographic sort bounds the
+    // window without any special-casing
+    const sorted = [...todays].sort();
+    const counts = await dailyCountsForBoards(
+      tx,
+      addDays(sorted[0], -6),
+      sorted[sorted.length - 1],
+    );
+    return boards.map((board, index) => {
+      const today = todays[index];
+      const boardCounts = counts.get(board.id);
       const strip: number[] = [];
       for (let offset = 6; offset >= 0; offset -= 1) {
-        strip.push(counts.get(addDays(today, -offset)) ?? 0);
+        strip.push(boardCounts?.get(addDays(today, -offset)) ?? 0);
       }
-      cards.push({ board, today, strip });
-    }
-    return cards;
+      return { board, today, strip };
+    });
   });
 }
 

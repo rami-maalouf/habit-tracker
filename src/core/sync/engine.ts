@@ -158,7 +158,11 @@ async function localStampFor(
   };
 }
 
-async function applyRecord(tx: SqlExecutor, record: SyncRecord): Promise<boolean> {
+async function applyRecord(
+  tx: SqlExecutor,
+  record: SyncRecord,
+  now: number,
+): Promise<boolean> {
   const local = await localStampFor(tx, record);
   // whole-record last-writer-wins on the lexicographic stamp; equal stamps
   // are the same mutation and need no write
@@ -181,7 +185,15 @@ async function applyRecord(tx: SqlExecutor, record: SyncRecord): Promise<boolean
 
   const spec = specFor(record.entityType);
   const columns = spec.columns.filter((column) => column !== spec.idColumn);
-  const values = columns.map((column) => record.fields[column] ?? null);
+  // `deleted` is authoritative: a stripped tombstone whose deleted_at field
+  // was lost in transit must never come back to life, and a live record
+  // must never inherit a stale deleted_at
+  const deletedAt = record.deleted
+    ? (typeof record.fields.deleted_at === 'number' ? record.fields.deleted_at : now)
+    : null;
+  const values = columns.map((column) =>
+    column === 'deleted_at' ? deletedAt : (record.fields[column] ?? null),
+  );
 
   if (record.entityType === 'activity_period') {
     const parsed = parsePeriodEntityId(record.entityId);
@@ -192,7 +204,7 @@ async function applyRecord(tx: SqlExecutor, record: SyncRecord): Promise<boolean
       await tx.runAsync(
         `UPDATE board_activity_periods SET end_date = ?, deleted_at = ?, mutation_stamp = ?
          WHERE id = ?`,
-        [record.fields.end_date ?? null, record.fields.deleted_at ?? null, record.mutationStamp, local.localId],
+        [record.fields.end_date ?? null, deletedAt, record.mutationStamp, local.localId],
       );
       return true;
     }
@@ -204,7 +216,7 @@ async function applyRecord(tx: SqlExecutor, record: SyncRecord): Promise<boolean
         parsed.startDate,
         record.fields.end_date ?? null,
         record.mutationStamp,
-        record.fields.deleted_at ?? null,
+        deletedAt,
       ],
     );
     return true;
@@ -251,7 +263,7 @@ async function applyWithDeferral(
   now: number,
 ): Promise<boolean> {
   try {
-    const applied = await applyRecord(tx, record);
+    const applied = await applyRecord(tx, record, now);
     await deleteDeferredRecord(tx, record.entityType, record.entityId);
     return applied;
   } catch {

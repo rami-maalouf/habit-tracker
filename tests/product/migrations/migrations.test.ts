@@ -118,3 +118,78 @@ describe('migrations', () => {
     expect(checksum).toHaveLength(8);
   });
 });
+
+describe('upgrade from a version-1 database', () => {
+  it('stamps and enqueues an existing metrics dismissal so it reaches first sync', async () => {
+    // a store that stopped at version 1 with a dismissal already recorded
+    const db = new NodeSqlDatabase();
+    await db.execAsync('PRAGMA journal_mode = WAL');
+    await db.runAsync(
+      `CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL,
+         checksum TEXT NOT NULL, applied_at INTEGER NOT NULL)`,
+    );
+    const first = migrations[0];
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      for (const statement of first.statements) {
+        await tx.runAsync(statement);
+      }
+      await tx.runAsync(
+        'INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)',
+        [first.version, first.name, migrationChecksum(first), 0],
+      );
+    });
+    await db.runAsync(
+      `INSERT INTO app_settings (id, schema_revision, device_id, metrics_education_dismissed)
+       VALUES (1, 1, 'device-abc', '["00000000-0000-4000-8000-000000000001"]')`,
+    );
+
+    const migrated = await migrateDatabase(db);
+    if (!migrated.ok) {
+      throw new Error(migrated.error.message);
+    }
+
+    const row = await db.getFirstAsync<{ settings_mutation_stamp: string | null }>(
+      'SELECT settings_mutation_stamp FROM app_settings WHERE id = 1',
+    );
+    // a stamp that sorts below every real one, so any other device wins
+    expect(row?.settings_mutation_stamp).toBe('00000000000000-00000-device-abc');
+    const outbox = await db.getAllAsync<{ entity_id: string; mutation_stamp: string }>(
+      `SELECT entity_id, mutation_stamp FROM mutation_outbox WHERE entity_type = 'settings'`,
+    );
+    expect(outbox).toHaveLength(1);
+    expect(outbox[0].entity_id).toBe('app-settings');
+    await db.closeAsync();
+  });
+
+  it('leaves an empty dismissal list unstamped and unqueued', async () => {
+    const db = new NodeSqlDatabase();
+    await db.runAsync(
+      `CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL,
+         checksum TEXT NOT NULL, applied_at INTEGER NOT NULL)`,
+    );
+    const first = migrations[0];
+    await db.withExclusiveTransactionAsync(async (tx) => {
+      for (const statement of first.statements) {
+        await tx.runAsync(statement);
+      }
+      await tx.runAsync(
+        'INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)',
+        [first.version, first.name, migrationChecksum(first), 0],
+      );
+    });
+    await db.runAsync(
+      `INSERT INTO app_settings (id, schema_revision, device_id) VALUES (1, 1, 'device-xyz')`,
+    );
+    const migrated = await migrateDatabase(db);
+    expect(migrated.ok).toBe(true);
+    const row = await db.getFirstAsync<{ settings_mutation_stamp: string | null }>(
+      'SELECT settings_mutation_stamp FROM app_settings WHERE id = 1',
+    );
+    expect(row?.settings_mutation_stamp).toBeNull();
+    const outbox = await db.getAllAsync(
+      `SELECT id FROM mutation_outbox WHERE entity_type = 'settings'`,
+    );
+    expect(outbox).toHaveLength(0);
+    await db.closeAsync();
+  });
+});

@@ -11,9 +11,11 @@ type TableSpec = {
   idColumn: string;
   // columns that travel; everything else is device-local by definition
   columns: string[];
-  // user content cleared on a tombstone, mapped to the empty value its
-  // column accepts: a replica inserting a tombstone it never saw still has
-  // to satisfy the local NOT NULL constraints
+  // everything a tombstone must drop - user content AND user preferences -
+  // mapped to the empty value its column accepts, because a replica
+  // inserting a tombstone it never saw still has to satisfy the local
+  // NOT NULL constraints. only structural linkage (ids, board_id,
+  // order_key, start_date) and timestamps survive a delete.
   userContent: Record<string, string | number | null>;
 };
 
@@ -42,7 +44,19 @@ const SPECS: Record<SyncEntityType, TableSpec> = {
       'updated_at',
       'deleted_at',
     ],
-    userContent: { title: '', symbol: '', accent_hex: '', amount_unit: null },
+    userContent: {
+      title: '',
+      symbol: '',
+      accent_hex: '',
+      amount_unit: null,
+      quick_amount: 0,
+      uses_tinted_background: 0,
+      tracks_amount: 0,
+      tracks_time: 0,
+      start_of_day_minute: 0,
+      metrics_enabled: 0,
+      archived_at: null,
+    },
   },
   check_in: {
     table: 'check_ins',
@@ -62,7 +76,14 @@ const SPECS: Record<SyncEntityType, TableSpec> = {
       'updated_at',
       'deleted_at',
     ],
-    userContent: { note: null, amount: null },
+    userContent: {
+      note: null,
+      amount: null,
+      logical_date: '',
+      occurred_at_utc: null,
+      time_zone_id: null,
+      offset_minutes: null,
+    },
   },
   reminder: {
     table: 'reminders',
@@ -78,13 +99,13 @@ const SPECS: Record<SyncEntityType, TableSpec> = {
       'updated_at',
       'deleted_at',
     ],
-    userContent: { message: null },
+    userContent: { message: null, weekdays_mask: 0, minute_of_day: 0, enabled: 0 },
   },
   activity_period: {
     table: 'board_activity_periods',
     idColumn: 'id',
     columns: ['board_id', 'start_date', 'end_date', 'deleted_at'],
-    userContent: {},
+    userContent: { end_date: null },
   },
   settings: {
     table: 'app_settings',

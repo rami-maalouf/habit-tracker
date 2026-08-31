@@ -806,3 +806,140 @@ describe('sync engine edges', () => {
     expect(parsePeriodEntityId('trailing|')).toBeNull();
   });
 });
+
+describe('sync tombstone and conflict hardening', () => {
+  it('strips preferences as well as content from a tombstone', async () => {
+    const { harness, transport, deps } = await setup();
+    const boardId = await createBoardForTest(harness, {
+      title: 'private habit',
+      tracksAmount: true,
+      amountUnit: 'reps',
+      quickAmount: 12,
+      tracksTime: true,
+      startOfDayMinute: 180,
+    });
+    const created = await createCheckIn(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+      amount: 9,
+      note: 'do not leak me',
+      source: 'app',
+    });
+    if (!created.ok) {
+      throw new Error(created.error.message);
+    }
+    await runSync(deps);
+    transport.uploads = [];
+    const deleted = await deleteBoard(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+    });
+    if (!deleted.ok) {
+      throw new Error(deleted.error.message);
+    }
+    await runSync(deps);
+    const uploaded = transport.uploads.flat();
+    const board = uploaded.find((record) => record.entityType === 'board' && record.deleted);
+    // only structural linkage and timestamps survive
+    expect(board?.fields.title).toBe('');
+    expect(board?.fields.amount_unit).toBeNull();
+    expect(board?.fields.quick_amount).toBe(0);
+    expect(board?.fields.tracks_amount).toBe(0);
+    expect(board?.fields.tracks_time).toBe(0);
+    expect(board?.fields.start_of_day_minute).toBe(0);
+    expect(board?.fields.metrics_enabled).toBe(0);
+    expect(board?.fields.order_key).not.toBe('');
+    expect(board?.fields.created_at).not.toBeNull();
+
+    const checkIn = uploaded.find((record) => record.entityType === 'check_in' && record.deleted);
+    expect(checkIn?.fields.note).toBeNull();
+    expect(checkIn?.fields.amount).toBeNull();
+    expect(checkIn?.fields.logical_date).toBe('');
+    expect(checkIn?.fields.occurred_at_utc).toBeNull();
+    expect(checkIn?.fields.time_zone_id).toBeNull();
+    expect(checkIn?.fields.board_id).toBe(boardId);
+    await harness.db.closeAsync();
+  });
+
+  it('honors the deleted flag even when the tombstone lost its timestamp', async () => {
+    const { harness, transport, deps } = await setup();
+    const boardId = await createBoardForTest(harness, { title: 'to be deleted' });
+    await runSync(deps);
+    // a peer whose tombstone carries no deleted_at value
+    transport.seedRemote(
+      remoteBoard({
+        id: boardId,
+        stamp: '99999999999999-00001-other',
+        deleted: true,
+        fields: { title: '', deleted_at: null },
+      }),
+    );
+    const result = await runSync(deps);
+    expect(result.ok && result.value.applied).toBe(1);
+    const row = await harness.db.getFirstAsync<{ deleted_at: number | null }>(
+      'SELECT deleted_at FROM boards WHERE id = ?',
+      [boardId],
+    );
+    // the record is dead, dated by the applying device's clock
+    expect(row?.deleted_at).toBe(harness.clock.nowUtcMs());
+    await harness.db.closeAsync();
+  });
+
+  it('never lets a live record inherit a stale tombstone timestamp', async () => {
+    const { harness, transport, deps } = await setup();
+    const boardId = '00000000-0000-4000-8000-0000000000c8';
+    // a peer that is not deleted but carries a leftover deleted_at
+    transport.seedRemote(
+      remoteBoard({
+        id: boardId,
+        stamp: '99999999999999-00002-other',
+        title: 'alive',
+        fields: { deleted_at: 12345 },
+      }),
+    );
+    const result = await runSync(deps);
+    expect(result.ok && result.value.applied).toBe(1);
+    const active = await listActiveBoards(harness.deps);
+    expect(active.ok && active.value.map((board) => board.title)).toContain('alive');
+    await harness.db.closeAsync();
+  });
+
+  it('lets the server keep the greater stamp when a client uploads stale data', async () => {
+    const { harness, transport } = await setup();
+    void harness;
+    const winner: SyncRecord = remoteBoard({
+      id: '00000000-0000-4000-8000-0000000000d9',
+      stamp: '99999999999999-00001-other',
+      title: 'newer',
+    });
+    await transport.upload([winner]);
+    const staleClientWrite = remoteBoard({
+      id: '00000000-0000-4000-8000-0000000000d9',
+      stamp: '00000000000001-00001-mine',
+      title: 'older',
+    });
+    await transport.upload([staleClientWrite]);
+    // the server refused the stale write instead of masking the divergence
+    expect(transport.rejectedStaleUploads).toHaveLength(1);
+    expect(transport.store.get('board:00000000-0000-4000-8000-0000000000d9')?.fields.title).toBe(
+      'newer',
+    );
+    await harness.db.closeAsync();
+  });
+
+  it('stamps and enqueues an existing dismissal on upgrade', async () => {
+    const harness = await createTestHarness();
+    // a version-1 row that already holds a dismissal
+    const row = await harness.db.getFirstAsync<{ settings_mutation_stamp: string | null }>(
+      'SELECT settings_mutation_stamp FROM app_settings WHERE id = 1',
+    );
+    // a fresh database migrates through version 3 with an empty list, so
+    // nothing is stamped or enqueued
+    expect(row?.settings_mutation_stamp).toBeNull();
+    const outbox = await harness.db.getAllAsync(
+      `SELECT id FROM mutation_outbox WHERE entity_type = 'settings'`,
+    );
+    expect(outbox).toHaveLength(0);
+    await harness.db.closeAsync();
+  });
+});

@@ -17,7 +17,14 @@
       "entitlements": {
         "com.apple.security.application-groups": [
           "group.com.ramimaalouf.habittracker"
-        ]
+        ],
+        "com.apple.developer.icloud-container-identifiers": [
+          "iCloud.com.ramimaalouf.habittracker"
+        ],
+        "com.apple.developer.icloud-services": [
+          "CloudKit"
+        ],
+        "com.apple.developer.ubiquity-kvstore-identifier": "$(TeamIdentifierPrefix)com.ramimaalouf.habittracker"
       }
     },
     "android": {

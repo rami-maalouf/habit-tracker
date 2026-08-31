@@ -18,6 +18,7 @@ import {
   checkInIdExists,
   getCheckInById,
   insertCheckIn,
+  latestCheckInForDate,
   updateCheckInRow,
 } from '../persistence/repositories/check-ins';
 import { insertReminder, reminderIdExists } from '../persistence/repositories/reminders';
@@ -428,7 +429,7 @@ export type CreateCheckInInput = {
 export function createCheckIn(
   deps: CommandDeps,
   input: CreateCheckInInput,
-): Promise<DomainResult<{ checkInId: CheckInId }>> {
+): Promise<DomainResult<{ checkInId: CheckInId; logicalDate: LogicalDate }>> {
   const note = validateNote(input.note);
   if (!note.ok) {
     return Promise.resolve(note);
@@ -502,7 +503,7 @@ export function createCheckIn(
     await insertCheckIn(tx, checkIn);
     await appendOutbox(tx, 'check_in', checkIn.id, mutationStamp, now);
     await rebuildWidgetRows(tx, now, timeZoneId);
-    return ok({ checkInId: checkIn.id });
+    return ok({ checkInId: checkIn.id, logicalDate });
   });
 }
 
@@ -610,6 +611,35 @@ export function removeCheckIn(
     await appendOutbox(tx, 'check_in', existing.id, mutationStamp, now);
     await rebuildWidgetRows(tx, now, timeZoneId);
     return ok(undefined);
+  });
+}
+
+// removes the newest record of one logical day. the lookup happens inside
+// the command envelope so a retry replays its receipt rather than resolving
+// a different still-live record (or reporting Not Found after success).
+export function removeLatestCheckIn(
+  deps: CommandDeps,
+  input: { commandId: CommandId; boardId: BoardId; logicalDate?: LogicalDate },
+): Promise<DomainResult<{ removedCheckInId: CheckInId; logicalDate: LogicalDate }>> {
+  return runCommand(deps, input.commandId, async ({ tx, now, timeZoneId, stamp }) => {
+    const board = await getBoardById(tx, input.boardId);
+    if (!board) {
+      return err('not_found', 'This board no longer exists.');
+    }
+    if (board.archivedAt !== null) {
+      return err('archived', 'Restore the board to delete its check-ins.');
+    }
+    const logicalDate =
+      input.logicalDate ?? currentLogicalDate(now, timeZoneId, board.startOfDayMinute);
+    const latest = await latestCheckInForDate(tx, board.id, logicalDate);
+    if (!latest) {
+      return err('not_found', 'There is no check-in to remove for that day.');
+    }
+    const mutationStamp = stamp();
+    await updateCheckInRow(tx, { ...latest, deletedAt: now, updatedAt: now, mutationStamp });
+    await appendOutbox(tx, 'check_in', latest.id, mutationStamp, now);
+    await rebuildWidgetRows(tx, now, timeZoneId);
+    return ok({ removedCheckInId: latest.id, logicalDate });
   });
 }
 

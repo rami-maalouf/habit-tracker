@@ -9,7 +9,8 @@ import {
   androidWidgetAdapter,
 } from '@/platform/android/adapters';
 
-const CORE_ROOT = join(__dirname, '../../../src/core');
+const SRC_ROOT = join(__dirname, '../../../src');
+const CORE_ROOT = join(SRC_ROOT, 'core');
 
 function walk(directory: string): string[] {
   const entries: string[] = [];
@@ -47,6 +48,36 @@ describe('android readiness', () => {
       for (const token of forbidden) {
         if (source.includes(`from '${token}`) || source.includes(`require('${token}`)) {
           offenders.push(`${file.split('/src/')[1]} -> ${token}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('keeps every production entry point android-safe outside .ios files', () => {
+    // the stubs above prove the adapters are honest; this proves the files
+    // android actually resolves never reach an ios-only module. anything
+    // ios-only has to live behind a .ios.* platform extension.
+    // only genuinely ios-only modules belong here. expo-notifications and
+    // the universal `@expo/ui` root both run on android, so importing them
+    // outside a platform file is safe; `@expo/ui/swift-ui` and expo-widgets
+    // are not.
+    const iosOnly = ['expo-widgets', '@expo/ui/swift-ui'];
+    const offenders: string[] = [];
+    for (const file of walk(SRC_ROOT)) {
+      const relative = file.split('/src/')[1];
+      // platform extensions are resolved per platform, and the widget
+      // layout is only ever compiled into the ios extension target
+      if (/\.(ios|android)\.tsx?$/.test(relative) || relative.includes('testing/')) {
+        continue;
+      }
+      if (relative === 'platform/widgets/ripples-boards-widget.tsx') {
+        continue;
+      }
+      const source = readFileSync(file, 'utf8');
+      for (const token of iosOnly) {
+        if (source.includes(`from '${token}'`)) {
+          offenders.push(`${relative} -> ${token}`);
         }
       }
     }

@@ -128,6 +128,26 @@ export const migrations: readonly Migration[] = [
   },
   {
     version: 3,
+    name: 'stamp_existing_settings',
+    statements: [
+      // a version-1 install may already hold dismissed metrics education.
+      // without a stamp and an outbox row that state would never reach the
+      // first sync. the stamp sorts below every real one, so any other
+      // device's edit wins - the honest outcome for data we cannot date.
+      `UPDATE app_settings
+         SET settings_mutation_stamp = '00000000000000-00000-' || device_id
+       WHERE id = 1
+         AND settings_mutation_stamp IS NULL
+         AND metrics_education_dismissed IS NOT NULL
+         AND metrics_education_dismissed NOT IN ('[]', '')`,
+      `INSERT INTO mutation_outbox (entity_type, entity_id, mutation_stamp, created_at)
+       SELECT 'settings', 'app-settings', settings_mutation_stamp, 0
+         FROM app_settings
+        WHERE id = 1 AND settings_mutation_stamp IS NOT NULL`,
+    ],
+  },
+  {
+    version: 4,
     name: 'sync_deferred',
     statements: [
       // a fetched record whose parent has not arrived yet cannot be applied

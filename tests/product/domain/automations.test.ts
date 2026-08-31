@@ -278,3 +278,157 @@ describe('automation contract remaining paths', () => {
     await harness.db.closeAsync();
   });
 });
+
+describe('automation contract retry and failure paths', () => {
+  it('replays a check-in retry with its original date across midnight', async () => {
+    const seeded = await seedHarness();
+    const { harness, idFor } = seeded;
+    const boardId = idFor('00000000-0000-4000-8000-00000000a001');
+    const commandId = harness.ids.nextCommandId();
+    const first = await runCheckInIntent(harness.deps, {
+      commandId,
+      boardId,
+      source: 'siri',
+    });
+    if (!first.ok) {
+      throw new Error(first.error.message);
+    }
+    // the clock crosses into the next logical day before the retry
+    harness.clock.advanceDays(1);
+    const retry = await runCheckInIntent(harness.deps, {
+      commandId,
+      boardId,
+      source: 'siri',
+    });
+    if (!retry.ok) {
+      throw new Error(retry.error.message);
+    }
+    // the receipt replays the original outcome: same record, same date
+    expect(retry.value.checkInId).toBe(first.value.checkInId);
+    expect(retry.value.logicalDate).toBe(first.value.logicalDate);
+    const rows = await harness.db.getAllAsync(
+      'SELECT id FROM check_ins WHERE board_id = ? AND deleted_at IS NULL',
+      [boardId],
+    );
+    expect(rows).toHaveLength(1);
+    await harness.db.closeAsync();
+  });
+
+  it('replays a removal retry instead of resolving a different record', async () => {
+    const seeded = await seedHarness();
+    const { harness, idFor } = seeded;
+    const boardId = idFor('00000000-0000-4000-8000-00000000a001');
+    for (let index = 0; index < 2; index += 1) {
+      const created = await runCheckInIntent(harness.deps, {
+        commandId: harness.ids.nextCommandId(),
+        boardId,
+        source: 'shortcut',
+      });
+      if (!created.ok) {
+        throw new Error(created.error.message);
+      }
+    }
+    const commandId = harness.ids.nextCommandId();
+    const first = await runRemoveLatestIntent(harness.deps, { commandId, boardId });
+    if (!first.ok) {
+      throw new Error(first.error.message);
+    }
+    const retry = await runRemoveLatestIntent(harness.deps, { commandId, boardId });
+    if (!retry.ok) {
+      throw new Error(retry.error.message);
+    }
+    // the same record, and the survivor is untouched
+    expect(retry.value.removedCheckInId).toBe(first.value.removedCheckInId);
+    const rows = await harness.db.getAllAsync(
+      'SELECT id FROM check_ins WHERE board_id = ? AND deleted_at IS NULL',
+      [boardId],
+    );
+    expect(rows).toHaveLength(1);
+    await harness.db.closeAsync();
+  });
+
+  it('returns an actionable result when a board read fails', async () => {
+    const seeded = await seedHarness();
+    const { harness, idFor } = seeded;
+    const boardId = idFor('00000000-0000-4000-8000-00000000a001');
+    const broken = Object.create(harness.db) as typeof harness.db;
+    broken.withTransactionAsync = () => Promise.reject(new Error('storage offline'));
+    const deps = { ...harness.deps, db: broken };
+
+    const checkIn = await runCheckInIntent(deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+      source: 'shortcut',
+    });
+    expect(!checkIn.ok && checkIn.error.code).toBe('database');
+    expect(!checkIn.ok && checkIn.error.message).toContain('storage offline');
+
+    const removal = await runRemoveLatestIntent(deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+    });
+    expect(!removal.ok && removal.error.code).toBe('database');
+    await harness.db.closeAsync();
+  });
+
+  it('fails an unknown or archived board for today\'s check-ins', async () => {
+    const seeded = await seedHarness();
+    const { harness, idFor } = seeded;
+    const unknown = await runTodayCheckInsIntent(harness.deps, {
+      boardId: '00000000-0000-4000-8000-00000000dead' as BoardId,
+    });
+    expect(!unknown.ok && unknown.error.code).toBe('not_found');
+
+    const archived = await runTodayCheckInsIntent(harness.deps, {
+      boardId: idFor('00000000-0000-4000-8000-00000000a003'),
+    });
+    expect(!archived.ok && archived.error.code).toBe('not_found');
+    await harness.db.closeAsync();
+  });
+
+  it('rejects a removal on a board that vanished inside the command', async () => {
+    const seeded = await seedHarness();
+    const { harness, idFor } = seeded;
+    const boardId = idFor('00000000-0000-4000-8000-00000000a001');
+    const created = await runCheckInIntent(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+      source: 'shortcut',
+    });
+    if (!created.ok) {
+      throw new Error(created.error.message);
+    }
+    // the preflight sees a live board; the command's own transaction sees
+    // it archived, and must still refuse
+    const racing = Object.create(harness.db) as typeof harness.db;
+    racing.withExclusiveTransactionAsync = (work) =>
+      harness.db.withExclusiveTransactionAsync(async (tx) => {
+        await tx.runAsync('UPDATE boards SET archived_at = 1 WHERE id = ?', [boardId]);
+        return work(tx);
+      });
+    const result = await runRemoveLatestIntent(
+      { ...harness.deps, db: racing },
+      { commandId: harness.ids.nextCommandId(), boardId },
+    );
+    expect(!result.ok && result.error.code).toBe('archived');
+    await harness.db.closeAsync();
+  });
+
+  it('rejects a removal when the board row is gone inside the command', async () => {
+    const seeded = await seedHarness();
+    const { harness, idFor } = seeded;
+    const boardId = idFor('00000000-0000-4000-8000-00000000a001');
+    const racing = Object.create(harness.db) as typeof harness.db;
+    racing.withExclusiveTransactionAsync = (work) =>
+      harness.db.withExclusiveTransactionAsync(async (tx) => {
+        await tx.runAsync('UPDATE boards SET deleted_at = 1 WHERE id = ?', [boardId]);
+        return work(tx);
+      });
+    const result = await runRemoveLatestIntent(
+      { ...harness.deps, db: racing },
+      { commandId: harness.ids.nextCommandId(), boardId },
+    );
+    expect(!result.ok && result.error.code).toBe('not_found');
+    await harness.db.closeAsync();
+  });
+});

@@ -14,6 +14,8 @@ import {
   newCommandId,
   resetProductCoreForTests,
 } from '../../../src/testing/product-core.mock';
+import { act } from '@testing-library/react-native';
+
 import { fireEvent, renderRouter, screen, settle } from '../../../src/testing/render';
 
 jest.mock('expo-haptics', () => ({
@@ -399,6 +401,70 @@ describe('icloud sync settings', () => {
     await settle();
     expect(screen.getByTestId('icloud-status')).toHaveTextContent(/Off/);
     expect(screen.queryByTestId('icloud-sync-now')).toBeNull();
+  });
+
+  it('retries a failed pass on the engine backoff and stops when turned off', async () => {
+    const opened = await getProductCore();
+    if (!opened.ok) {
+      throw new Error('core failed');
+    }
+    const created = await createBoard(opened.value, {
+      commandId: newCommandId(),
+      title: 'retry board',
+      symbol: 'star.fill',
+      accentHex: '#70A7FF',
+      usesTintedBackground: true,
+      tracksAmount: false,
+      tracksTime: false,
+      startOfDayMinute: 0,
+      metricsEnabled: true,
+    });
+    if (!created.ok) {
+      throw new Error(created.error.message);
+    }
+    renderRouter('src/app', { initialUrl: '/settings/sync' });
+    await screen.findByTestId('icloud-toggle');
+    alertSpy.mockImplementationOnce((_title, _message, buttons) => {
+      buttons?.find((button) => button.text === 'Turn On')?.onPress?.();
+    });
+    fireEvent(screen.getByTestId('icloud-toggle'), 'valueChange', true);
+    await settle();
+    await settle();
+    expect(screen.getByTestId('icloud-status')).toHaveTextContent(/Needs Attention/);
+
+    // the engine asked for a retry; advancing past the backoff runs another
+    // pass rather than leaving sync stuck
+    const before = await opened.value.db.getFirstAsync<{ retry_state: string | null }>(
+      'SELECT retry_state FROM sync_state WHERE id = 1',
+    );
+    expect(before?.retry_state).toContain('attempt');
+    await act(async () => {
+      jest.advanceTimersByTime(400_000);
+      await Promise.resolve();
+    });
+    await settle();
+    const after = await opened.value.db.getFirstAsync<{ retry_state: string | null }>(
+      'SELECT retry_state FROM sync_state WHERE id = 1',
+    );
+    // the attempt counter grew, so a retry really ran
+    expect(after?.retry_state).not.toBe(before?.retry_state);
+
+    // turning sync off cancels the schedule: no further attempts
+    fireEvent(screen.getByTestId('icloud-toggle'), 'valueChange', false);
+    await settle();
+    const stopped = await opened.value.db.getFirstAsync<{ retry_state: string | null }>(
+      'SELECT retry_state FROM sync_state WHERE id = 1',
+    );
+    await act(async () => {
+      jest.advanceTimersByTime(900_000);
+      await Promise.resolve();
+    });
+    await settle();
+    const idle = await opened.value.db.getFirstAsync<{ retry_state: string | null }>(
+      'SELECT retry_state FROM sync_state WHERE id = 1',
+    );
+    expect(idle?.retry_state).toBe(stopped?.retry_state);
+    expect(screen.getByTestId('icloud-status')).toHaveTextContent(/Off/);
   });
 
   it('shows the last successful sync time once one exists', async () => {
