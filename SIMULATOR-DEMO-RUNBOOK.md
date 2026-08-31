@@ -19,9 +19,11 @@ then capture the agent actions and final screenshot live.
 - dry-run viewport: 402 by 874
 - final evidence: `.artifacts/eas-simulator/demo-shot.png`
 
-The build is reusable until the product source or native configuration changes. If the
-source changes, compare the build fingerprint before filming. Do not use an older device
-`.ipa`: it cannot run on the simulator and may contain stale product code.
+The dry-run build is pinned to `574fdb9`. Product work advanced after the upload, so it
+is verified for this exact board flow but is not fingerprint-current with `main`. For
+the final take, either intentionally film the pinned build or create one new `sim` build
+after product work freezes. Do not use an older device `.ipa`: it cannot run on the
+simulator and may contain stale product code.
 
 ## preflight
 
@@ -39,8 +41,8 @@ Expected results:
 - `whoami` returns `ramimaalouf`.
 - simulator availability returns `"available": true`.
 - there are no active iOS sessions before the take.
-- the build is `FINISHED`, `isForIosSimulator` is `true`, and the fingerprint matches
-  the verified input above.
+- the build is `FINISHED`, `isForIosSimulator` is `true`, and its source commit matches
+  the build you intend to film.
 
 Use `npx --yes eas-cli@latest` for these commands. Concurrent `bunx` invocations hit a
 package-linking race during the dry run.
