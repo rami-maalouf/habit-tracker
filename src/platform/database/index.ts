@@ -63,6 +63,13 @@ export async function openProductSqlDatabase(): Promise<SqlDatabase> {
   );
   await writeDb.execAsync('PRAGMA foreign_keys = ON');
   await readDb.execAsync('PRAGMA foreign_keys = ON');
+  // the app group database is shared with the widget extension, and a
+  // migration's exclusive transaction can meet another process mid-read.
+  // without a busy timeout sqlite fails instantly with "database is
+  // locked" and the app shows its recovery screen for what is really a
+  // few milliseconds of contention.
+  await writeDb.execAsync('PRAGMA busy_timeout = 5000');
+  await readDb.execAsync('PRAGMA busy_timeout = 5000');
 
   // serializes exclusive transactions on the write connection and read
   // transactions on the primary connection (one BEGIN at a time per
