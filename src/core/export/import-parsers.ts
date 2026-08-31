@@ -80,9 +80,14 @@ export function parseOwnExport(json: string): DomainResult<ImportDraft> {
   const checkIns = Array.isArray(data.checkIns) ? data.checkIns : [];
   const boardDrafts: ImportBoardDraft[] = [];
   for (const entry of boards) {
+    // a malformed record skips individually; one bad row must not reject
+    // an otherwise restorable file
+    if (typeof entry !== 'object' || entry === null) {
+      continue;
+    }
     const board = entry as Record<string, unknown>;
     if (typeof board.id !== 'string' || typeof board.title !== 'string') {
-      return err('validation', 'A board in this export is malformed.');
+      continue;
     }
     boardDrafts.push({
       sourceId: board.id,
@@ -100,21 +105,36 @@ export function parseOwnExport(json: string): DomainResult<ImportDraft> {
       createdAtUtc: typeof board.createdAtUtc === 'number' ? board.createdAtUtc : 0,
       archivedAtUtc: typeof board.archivedAtUtc === 'number' ? board.archivedAtUtc : null,
       preserveId: true,
+      // period entries are shape-checked here; the import command distrusts
+      // the whole list if the dates themselves are incoherent
       periods: Array.isArray(board.periods)
-        ? (board.periods as { startDate: string; endDate: string | null }[])
+        ? board.periods
+            .filter(
+              (period): period is Record<string, unknown> =>
+                typeof period === 'object' &&
+                period !== null &&
+                typeof (period as Record<string, unknown>).startDate === 'string',
+            )
+            .map((period) => ({
+              startDate: period.startDate as string,
+              endDate: typeof period.endDate === 'string' ? period.endDate : null,
+            }))
         : null,
       orderKey: typeof board.orderKey === 'string' ? board.orderKey : null,
     });
   }
   const checkInDrafts: ImportCheckInDraft[] = [];
   for (const entry of checkIns) {
+    if (typeof entry !== 'object' || entry === null) {
+      continue;
+    }
     const checkIn = entry as Record<string, unknown>;
     if (
       typeof checkIn.id !== 'string' ||
       typeof checkIn.boardId !== 'string' ||
       typeof checkIn.logicalDate !== 'string'
     ) {
-      return err('validation', 'A check-in in this export is malformed.');
+      continue;
     }
     checkInDrafts.push({
       sourceId: checkIn.id,
@@ -134,13 +154,18 @@ export function parseOwnExport(json: string): DomainResult<ImportDraft> {
 
 // --- ripples csv ----------------------------------------------------------
 
-// minimal rfc-4180: quoted fields, doubled quotes, commas and newlines
-// inside quotes, crlf or lf row endings
-export function parseCsv(text: string): string[][] {
+// strict rfc-4180: quoted fields, doubled quotes, commas and newlines
+// inside quotes, crlf or lf row endings. malformed quoting - an unterminated
+// quote, a quote inside an unquoted field, or content after a closing
+// quote - rejects the file instead of silently misreading it
+export function parseCsv(text: string): DomainResult<string[][]> {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = '';
   let inQuotes = false;
+  // set once a field was opened with a quote; only a separator or row end
+  // may follow its closing quote
+  let fieldQuoted = false;
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
     if (inQuotes) {
@@ -157,27 +182,41 @@ export function parseCsv(text: string): string[][] {
       continue;
     }
     if (char === '"') {
+      // a closing quote is only recognized when the next char is not a
+      // quote, so a quote here can never directly follow a quoted field
+      if (field.length > 0) {
+        return err('validation', 'This file is not valid CSV: unexpected quote in a field.');
+      }
       inQuotes = true;
+      fieldQuoted = true;
     } else if (char === ',') {
       row.push(field);
       field = '';
+      fieldQuoted = false;
     } else if (char === '\n' || char === '\r') {
       if (char === '\r' && text[index + 1] === '\n') {
         index += 1;
       }
       row.push(field);
       field = '';
+      fieldQuoted = false;
       rows.push(row);
       row = [];
     } else {
+      if (fieldQuoted) {
+        return err('validation', 'This file is not valid CSV: content after a closing quote.');
+      }
       field += char;
     }
   }
-  if (field.length > 0 || row.length > 0) {
+  if (inQuotes) {
+    return err('validation', 'This file is not valid CSV: a quoted field never closes.');
+  }
+  if (field.length > 0 || fieldQuoted || row.length > 0) {
     row.push(field);
     rows.push(row);
   }
-  return rows;
+  return ok(rows);
 }
 
 function roundShiftToStep(seconds: number): number {
@@ -187,13 +226,35 @@ function roundShiftToStep(seconds: number): number {
 }
 
 export function parseRipplesCsv(text: string): DomainResult<ImportDraft> {
-  const rows = parseCsv(text).filter((row) => row.some((cell) => cell.trim().length > 0));
+  const parsed = parseCsv(text);
+  if (!parsed.ok) {
+    return parsed;
+  }
+  const rows = parsed.value.filter((row) => row.some((cell) => cell.trim().length > 0));
   if (rows.length < 2) {
     return err('validation', 'This file has no importable rows.');
   }
   const header = rows[0].map((cell) => cell.trim());
   const column = (name: string) => header.indexOf(name);
-  const required = ['entity', 'board_id', 'board_name', 'checkin_id', 'checkin_boardId', 'checkin_createdAt'];
+  // every column this parser reads must be present; a partial schema would
+  // import lossy data (no amounts, no archive state, no notes) silently
+  const required = [
+    'entity',
+    'board_id',
+    'board_name',
+    'board_amountKind',
+    'board_createdAt',
+    'board_dayStartShiftSeconds',
+    'board_defaultAmount',
+    'board_tracksCheckinTime',
+    'board_tracksPerformanceMetrics',
+    'board_archivedAt',
+    'checkin_id',
+    'checkin_boardId',
+    'checkin_createdAt',
+    'checkin_amount',
+    'checkin_note',
+  ];
   for (const name of required) {
     if (column(name) < 0) {
       return err('validation', 'This file does not look like a Ripples CSV export.');
@@ -222,6 +283,13 @@ export function parseRipplesCsv(text: string): DomainResult<ImportDraft> {
       const shiftSeconds = Number(cell(row, 'board_dayStartShiftSeconds') || '0');
       const defaultAmountText = cell(row, 'board_defaultAmount');
       const defaultAmount = Number(defaultAmountText);
+      // a present but unreadable archive date must not silently restore an
+      // archived board as active
+      const archivedAtText = cell(row, 'board_archivedAt');
+      const archivedAtUtc = parseInstant(archivedAtText);
+      if (archivedAtText.length > 0 && archivedAtUtc === null) {
+        return err('validation', `The board "${title}" has an unreadable archive date.`);
+      }
       boards.push({
         sourceId,
         title,
@@ -238,7 +306,7 @@ export function parseRipplesCsv(text: string): DomainResult<ImportDraft> {
         startOfDayMinute: Number.isFinite(shiftSeconds) ? roundShiftToStep(shiftSeconds) : 0,
         metricsEnabled: cell(row, 'board_tracksPerformanceMetrics') !== 'false',
         createdAtUtc: createdAt,
-        archivedAtUtc: parseInstant(cell(row, 'board_archivedAt')),
+        archivedAtUtc,
         preserveId: false,
         periods: null,
         orderKey: null,

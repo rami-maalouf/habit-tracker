@@ -1,14 +1,21 @@
-import { compareLogicalDates, currentLogicalDate, offsetMinutesAt } from '../calendar/logical-date';
+import {
+  compareLogicalDates,
+  currentLogicalDate,
+  isValidLogicalDate,
+  offsetMinutesAt,
+} from '../calendar/logical-date';
 import type { ImportDraft } from '../export/import-parsers';
 import type { SqlDatabase, SqlExecutor } from '../persistence/database';
 import { rebuildWidgetRows } from '../persistence/projections/widget-rows';
 import {
+  boardIdExists,
   getBoardById,
   insertBoard,
   lastActiveOrderKey,
   updateBoardRow,
 } from '../persistence/repositories/boards';
 import {
+  checkInIdExists,
   getCheckInById,
   insertCheckIn,
   updateCheckInRow,
@@ -675,6 +682,48 @@ export type ImportSummary = {
   checkInsSkipped: number;
 };
 
+// restored activity periods replay only when the whole list is coherent:
+// real logical dates, each end on or after its start, strictly ordered
+// without overlap, and any open period last. one bad entry distrusts the
+// list and the import falls back to a derived lifetime period instead of
+// writing corrupt period state
+function sanitizeImportPeriods(
+  periods: { startDate: string; endDate: string | null }[],
+): { startDate: LogicalDate; endDate: LogicalDate | null }[] {
+  const cleaned: { startDate: LogicalDate; endDate: LogicalDate | null }[] = [];
+  for (const period of periods) {
+    if (typeof period !== 'object' || period === null) {
+      return [];
+    }
+    if (typeof period.startDate !== 'string' || !isValidLogicalDate(period.startDate)) {
+      return [];
+    }
+    if (period.endDate !== null) {
+      if (typeof period.endDate !== 'string' || !isValidLogicalDate(period.endDate)) {
+        return [];
+      }
+      if (compareLogicalDates(period.endDate, period.startDate) < 0) {
+        return [];
+      }
+    }
+    cleaned.push({
+      startDate: period.startDate as LogicalDate,
+      endDate: period.endDate as LogicalDate | null,
+    });
+  }
+  cleaned.sort((a, b) => compareLogicalDates(a.startDate, b.startDate));
+  for (let index = 1; index < cleaned.length; index += 1) {
+    const previous = cleaned[index - 1];
+    if (previous.endDate === null) {
+      return [];
+    }
+    if (compareLogicalDates(cleaned[index].startDate, previous.endDate) <= 0) {
+      return [];
+    }
+  }
+  return cleaned;
+}
+
 // one exclusive transaction maps normalized import drafts onto real
 // records: an own-format restore keeps original ids and periods and skips
 // records that already exist, while a ripples csv import always creates
@@ -730,6 +779,12 @@ export function importSnapshot(
           summary.boardsSkipped += 1;
           continue;
         }
+        if (await boardIdExists(tx, draft.sourceId as BoardId)) {
+          // a tombstoned row still owns its primary key; the deleted board
+          // stays deleted and its check-ins are not rerouted
+          summary.boardsSkipped += 1;
+          continue;
+        }
       }
       const boardId = (draft.preserveId ? draft.sourceId : deps.ids.uuid()) as BoardId;
       const mutationStamp = stamp();
@@ -737,7 +792,9 @@ export function importSnapshot(
       const archivedAt =
         draft.archivedAtUtc === null ? null : Math.min(draft.archivedAtUtc, now);
       const orderKey = draft.orderKey ?? orderKeyAfter(lastKey);
-      if (draft.orderKey === null) {
+      // every used key folds into the high-water mark, preserved ones
+      // included, so later generated keys cannot collide or interleave
+      if (lastKey === null || orderKey > lastKey) {
         lastKey = orderKey;
       }
       const board: Board = {
@@ -761,22 +818,19 @@ export function importSnapshot(
       };
       await insertBoard(tx, board);
       await appendOutbox(tx, 'board', boardId, mutationStamp, now);
-      if (draft.periods !== null) {
+      const restoredPeriods = draft.periods === null ? [] : sanitizeImportPeriods(draft.periods);
+      if (restoredPeriods.length > 0) {
         // an own-format restore replays its recorded activity periods
-        for (const period of draft.periods) {
-          const periodId = await insertPeriod(
-            tx,
-            boardId,
-            period.startDate as LogicalDate,
-            mutationStamp,
-          );
+        for (const period of restoredPeriods) {
+          const periodId = await insertPeriod(tx, boardId, period.startDate, mutationStamp);
           if (period.endDate !== null) {
-            await closeOpenPeriod(tx, boardId, period.endDate as LogicalDate, mutationStamp);
+            await closeOpenPeriod(tx, boardId, period.endDate, mutationStamp);
           }
           await appendOutbox(tx, 'activity_period', String(periodId), mutationStamp, now);
         }
       } else {
-        // a ripples import derives one period from creation to archive
+        // ripples imports, and own restores whose period list is missing or
+        // incoherent, derive one period from creation to archive
         const startDate = currentLogicalDate(
           createdAt,
           timeZoneId,
@@ -815,8 +869,9 @@ export function importSnapshot(
           summary.checkInsSkipped += 1;
           continue;
         }
-        const existing = await getCheckInById(tx, draft.sourceId as CheckInId);
-        if (existing) {
+        // the raw check covers live and tombstoned rows: both own the
+        // primary key, and a deleted check-in stays deleted
+        if (await checkInIdExists(tx, draft.sourceId as CheckInId)) {
           summary.checkInsSkipped += 1;
           continue;
         }
@@ -827,10 +882,16 @@ export function importSnapshot(
         tracksTime: boolean;
       };
       const instant = draft.occurredAtUtc;
-      const logicalDate =
-        draft.logicalDate !== null
-          ? (draft.logicalDate as LogicalDate)
-          : currentLogicalDate(instant as number, timeZoneId, meta.startOfDayMinute);
+      let logicalDate: LogicalDate;
+      if (draft.logicalDate !== null && isValidLogicalDate(draft.logicalDate)) {
+        logicalDate = draft.logicalDate;
+      } else if (instant !== null) {
+        // a malformed stored date falls back to the instant's logical date
+        logicalDate = currentLogicalDate(instant, timeZoneId, meta.startOfDayMinute);
+      } else {
+        summary.checkInsSkipped += 1;
+        continue;
+      }
       const today = currentLogicalDate(now, timeZoneId, meta.startOfDayMinute);
       if (logicalDate > today) {
         // future rows never enter the store
@@ -838,11 +899,18 @@ export function importSnapshot(
         continue;
       }
       const note = validateNote(draft.note);
+      // amounts pass the same domain gate as user input; an out-of-range
+      // value is dropped, not a reason to lose the record
+      const amountResult =
+        meta.tracksAmount && draft.amount !== null ? validateAmount(draft.amount) : null;
       const mutationStamp = stamp();
       const checkInId = (
         draft.preserveId && draft.sourceId !== null ? draft.sourceId : deps.ids.uuid()
       ) as CheckInId;
-      const storedInstant = meta.tracksTime ? instant : null;
+      // a same-day instant from a skewed source clock is clamped so no
+      // stored occurrence sits in the future
+      const storedInstant =
+        meta.tracksTime && instant !== null ? Math.min(instant, now) : null;
       const checkIn: CheckIn = {
         id: checkInId,
         boardId,
@@ -854,8 +922,7 @@ export function importSnapshot(
           storedInstant === null
             ? null
             : (draft.offsetMinutes ?? offsetMinutesAt(storedInstant, timeZoneId)),
-        amount:
-          meta.tracksAmount && draft.amount !== null && draft.amount > 0 ? draft.amount : null,
+        amount: amountResult !== null && amountResult.ok ? amountResult.value : null,
         // an over-long note is dropped, not a reason to lose the record
         note: note.ok ? note.value : null,
         source: 'app',

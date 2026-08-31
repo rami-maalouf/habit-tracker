@@ -102,6 +102,15 @@ export async function updateBoardRow(tx: SqlExecutor, board: Board): Promise<voi
   );
 }
 
+// import restores must see tombstoned rows too: inserting over a deleted
+// id would violate the primary key and roll back the whole restore
+export async function boardIdExists(tx: SqlExecutor, boardId: BoardId): Promise<boolean> {
+  const row = await tx.getFirstAsync<{ id: string }>(`SELECT id FROM boards WHERE id = ?`, [
+    boardId,
+  ]);
+  return row !== null && row !== undefined;
+}
+
 export async function getBoardById(tx: SqlExecutor, boardId: BoardId): Promise<Board | null> {
   const row = await tx.getFirstAsync<BoardRow>(
     `SELECT ${BOARD_COLUMNS} FROM boards WHERE id = ? AND deleted_at IS NULL`,

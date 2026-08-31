@@ -91,6 +91,15 @@ export async function updateCheckInRow(tx: SqlExecutor, checkIn: CheckIn): Promi
   );
 }
 
+// import restores must see tombstoned rows too: inserting over a deleted
+// id would violate the primary key and roll back the whole restore
+export async function checkInIdExists(tx: SqlExecutor, checkInId: CheckInId): Promise<boolean> {
+  const row = await tx.getFirstAsync<{ id: string }>(`SELECT id FROM check_ins WHERE id = ?`, [
+    checkInId,
+  ]);
+  return row !== null && row !== undefined;
+}
+
 export async function getCheckInById(
   tx: SqlExecutor,
   checkInId: CheckInId,

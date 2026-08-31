@@ -1,4 +1,4 @@
-import { archiveBoard, createCheckIn, importSnapshot } from '@/core/domain/commands';
+import { archiveBoard, createCheckIn, deleteBoard, importSnapshot } from '@/core/domain/commands';
 import type { LogicalDate } from '@/core/domain/ids';
 import { getBoardSummary, getGroupedCheckInHistory, listActiveBoards, listArchivedBoards } from '@/core/domain/queries';
 import {
@@ -31,11 +31,31 @@ Checkin,,,,,,,,,,11111111-1111-4111-8111-111111111111,AAAA0000-0000-4000-8000-00
 Checkin,,,,,,,,,,22222222-2222-4222-8222-222222222222,MISSING-BOARD,,,2026-06-20T15:51:34Z
 `;
 
+function csvRows(text: string): string[][] {
+  const parsed = parseCsv(text);
+  if (!parsed.ok) {
+    throw new Error(parsed.error.message);
+  }
+  return parsed.value;
+}
+
 describe('csv parsing', () => {
   it('handles quotes, embedded commas, doubled quotes, and crlf', () => {
-    const rows = parseCsv('a,"b,c",""d"" raw\r\n"line\nbreak",e,f');
-    expect(rows[0]).toEqual(['a', 'b,c', 'd raw']);
+    const rows = csvRows('a,"b,c","""d"" raw"\r\n"line\nbreak",e,f');
+    expect(rows[0]).toEqual(['a', 'b,c', '"d" raw']);
     expect(rows[1]).toEqual(['line\nbreak', 'e', 'f']);
+  });
+
+  it('rejects malformed quoting instead of silently misreading it', () => {
+    // unterminated quoted field
+    expect(parseCsv('a,"never closes').ok).toBe(false);
+    // quote opening inside an unquoted field
+    expect(parseCsv('a,b"c').ok).toBe(false);
+    // content after a closing quote
+    expect(parseCsv('"a"x,b').ok).toBe(false);
+    expect(parseCsv('a,"b" ,c').ok).toBe(false);
+    // a lone empty quoted field at end of input still lands in a row
+    expect(csvRows('a,""')).toEqual([['a', '']]);
   });
 
   it('parses the ripples export structure', () => {
@@ -75,6 +95,27 @@ describe('csv parsing', () => {
     expect(parseRipplesCsv(noName).ok).toBe(false);
     const badCheckIn = RIPPLES_CSV.replace('2026-05-04T15:17:39Z', '');
     expect(parseRipplesCsv(badCheckIn).ok).toBe(false);
+  });
+
+  it('propagates csv quoting errors through the ripples parser', () => {
+    expect(parseRipplesCsv('a,"broken').ok).toBe(false);
+  });
+
+  it('requires the full set of consumed columns', () => {
+    // a partial schema would silently import lossy data
+    const missingNote = RIPPLES_CSV.replace('checkin_note', 'renamed_note');
+    expect(parseRipplesCsv(missingNote).ok).toBe(false);
+    const missingArchive = RIPPLES_CSV.replace('board_archivedAt', 'board_archived');
+    expect(parseRipplesCsv(missingArchive).ok).toBe(false);
+  });
+
+  it('rejects an unreadable non-empty archive date instead of restoring active', () => {
+    const garbageArchive = RIPPLES_CSV.replace('2026-07-01T10:00:00Z', 'garbage-date');
+    const parsed = parseRipplesCsv(garbageArchive);
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) {
+      expect(parsed.error.message).toContain('archive date');
+    }
   });
 });
 
@@ -284,6 +325,38 @@ describe('own export round trip', () => {
     expect(snapshot.value.boards[0].periods.length).toBeGreaterThanOrEqual(1);
 
     const serialized = serializeExport(snapshot.value);
+
+    // the serialized file must not leak sync or device internals; every
+    // key in the actual json is checked, not just the keys a lenient
+    // parser happens to read back
+    const keys = new Set<string>();
+    const collectKeys = (value: unknown): void => {
+      if (Array.isArray(value)) {
+        value.forEach(collectKeys);
+      } else if (value !== null && typeof value === 'object') {
+        for (const [key, nested] of Object.entries(value)) {
+          keys.add(key);
+          collectKeys(nested);
+        }
+      }
+    };
+    collectKeys(JSON.parse(serialized));
+    const forbidden = [
+      'receipt',
+      'outbox',
+      'device',
+      'tombstone',
+      'deleted',
+      'mutationstamp',
+      'idempotency',
+      'hlc',
+    ];
+    for (const key of keys) {
+      for (const fragment of forbidden) {
+        expect(key.toLowerCase()).not.toContain(fragment);
+      }
+    }
+
     const parsed = parseOwnExport(serialized);
     if (!parsed.ok) {
       throw new Error(parsed.error.message);
@@ -334,15 +407,44 @@ describe('own export round trip', () => {
     expect(parseOwnExport('42').ok).toBe(false);
     expect(parseOwnExport('{"format":"other"}').ok).toBe(false);
     expect(parseOwnExport('{"format":"ripples.export","exportVersion":2}').ok).toBe(false);
-    expect(
-      parseOwnExport('{"format":"ripples.export","exportVersion":1,"boards":[{}],"checkIns":[]}')
-        .ok,
-    ).toBe(false);
-    expect(
-      parseOwnExport(
-        '{"format":"ripples.export","exportVersion":1,"boards":[],"checkIns":[{}]}',
-      ).ok,
-    ).toBe(false);
+  });
+
+  it('skips malformed own-export records instead of rejecting the file', () => {
+    const mixed = JSON.stringify({
+      format: 'ripples.export',
+      exportVersion: 1,
+      boards: [
+        null,
+        {},
+        { id: '00000000-0000-4000-8000-0000000000aa', title: 5 },
+        {
+          id: '00000000-0000-4000-8000-0000000000ab',
+          title: 'survivor',
+          // malformed period entries are shape-filtered at parse time
+          periods: [null, { startDate: 42 }, { startDate: '2026-08-01', endDate: 7 }],
+        },
+      ],
+      checkIns: [
+        null,
+        {},
+        { id: 'x' },
+        {
+          id: '00000000-0000-4000-8000-0000000000ac',
+          boardId: '00000000-0000-4000-8000-0000000000ab',
+          logicalDate: '2026-08-01',
+        },
+      ],
+    });
+    const parsed = parseOwnExport(mixed);
+    if (!parsed.ok) {
+      throw new Error(parsed.error.message);
+    }
+    expect(parsed.value.boards).toHaveLength(1);
+    expect(parsed.value.boards[0].title).toBe('survivor');
+    expect(parsed.value.boards[0].periods).toEqual([
+      { startDate: '2026-08-01', endDate: null },
+    ]);
+    expect(parsed.value.checkIns).toHaveLength(1);
   });
 
   it('names export files by their utc instant', () => {
@@ -422,8 +524,8 @@ describe('parser and command edge coverage', () => {
     }
     expect(parsedZero.value.boards[0].quickAmount).toBe(1);
 
-    expect(parseCsv('a,')).toEqual([['a', '']]);
-    expect(parseCsv('a,b')).toEqual([['a', 'b']]);
+    expect(csvRows('a,')).toEqual([['a', '']]);
+    expect(csvRows('a,b')).toEqual([['a', 'b']]);
   });
 
   it('skips own-format records with malformed uuids and falls back zones', async () => {
@@ -529,14 +631,13 @@ describe('parser and command edge coverage', () => {
     }
     expect(empty.value.boards).toHaveLength(0);
     expect(empty.value.checkIns).toHaveLength(0);
-    // a valid-id board with a non-string title is malformed
-    expect(
-      parseOwnExport(
-        '{"format":"ripples.export","exportVersion":1,"boards":[{"id":"x","title":5}],"checkIns":[]}',
-      ).ok,
-    ).toBe(false);
+    // a valid-id board with a non-string title is skipped, not fatal
+    const badTitle = parseOwnExport(
+      '{"format":"ripples.export","exportVersion":1,"boards":[{"id":"x","title":5}],"checkIns":[]}',
+    );
+    expect(badTitle.ok && badTitle.value.boards).toHaveLength(0);
     // doubled quotes inside a quoted field
-    expect(parseCsv('"a""b",c')).toEqual([['a"b', 'c']]);
+    expect(csvRows('"a""b",c')).toEqual([['a"b', 'c']]);
 
     const header = RIPPLES_CSV.split('\n')[0];
     const validDefault = `${header}\nBoard,BB,"five default","Cups",false,true,5,,,2026-05-04T02:06:28Z,,,,,`;
@@ -642,5 +743,346 @@ describe('parser and command edge coverage', () => {
     if (!snapshot.ok) {
       expect(snapshot.error.message).toContain('The export could not be generated');
     }
+  });
+});
+
+describe('import hardening', () => {
+  const boardDraft = (overrides: Record<string, unknown>) => ({
+    sourceId: '00000000-0000-4000-8000-0000000000a0',
+    title: 'hardened',
+    symbol: 'star.fill',
+    accentHex: '#78D98B',
+    usesTintedBackground: true,
+    tracksAmount: false,
+    amountUnit: null,
+    quickAmount: 1,
+    tracksTime: false,
+    startOfDayMinute: 0,
+    metricsEnabled: true,
+    createdAtUtc: Date.UTC(2026, 7, 1, 12),
+    archivedAtUtc: null,
+    preserveId: true,
+    periods: null,
+    orderKey: null,
+    ...overrides,
+  });
+  const checkInDraft = (overrides: Record<string, unknown>) => ({
+    sourceId: null,
+    sourceBoardId: '00000000-0000-4000-8000-0000000000a0',
+    occurredAtUtc: null,
+    createdAtUtc: Date.UTC(2026, 7, 2, 12),
+    amount: null,
+    note: null,
+    logicalDate: '2026-08-02',
+    timeZoneId: null,
+    offsetMinutes: null,
+    preserveId: true,
+    ...overrides,
+  });
+
+  it('skips tombstoned ids without aborting the restore', async () => {
+    const harness = await createTestHarness();
+    const boardId = await createBoardForTest(harness, { title: 'doomed board' });
+    const created = await createCheckIn(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+      logicalDate: '2026-08-29' as LogicalDate,
+      source: 'app',
+    });
+    if (!created.ok) {
+      throw new Error(created.error.message);
+    }
+    const deleted = await deleteBoard(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+    });
+    if (!deleted.ok) {
+      throw new Error(deleted.error.message);
+    }
+
+    // restoring a file that still contains the deleted records must not
+    // hit the tombstones' primary keys and roll the whole restore back
+    const result = await importSnapshot(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      draft: {
+        source: 'own',
+        boards: [boardDraft({ sourceId: boardId, title: 'doomed board' })],
+        checkIns: [
+          checkInDraft({ sourceId: created.value.checkInId, sourceBoardId: boardId }),
+          checkInDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000a1',
+            sourceBoardId: boardId,
+          }),
+        ],
+      },
+    });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(result.value.boardsSkipped).toBe(1);
+    expect(result.value.boardsCreated).toBe(0);
+    // the deleted board is not rerouted, so both check-ins skip
+    expect(result.value.checkInsSkipped).toBe(2);
+    const active = await listActiveBoards(harness.deps);
+    expect(active.ok && active.value).toHaveLength(0);
+    await harness.db.closeAsync();
+  });
+
+  it('replays coherent restored periods and distrusts incoherent lists', async () => {
+    const harness = await createTestHarness();
+    const result = await importSnapshot(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      draft: {
+        source: 'own',
+        boards: [
+          boardDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000b1',
+            title: 'coherent',
+            periods: [
+              { startDate: '2026-08-10', endDate: null },
+              { startDate: '2026-08-01', endDate: '2026-08-05' },
+            ],
+          }),
+          boardDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000b2',
+            title: 'overlapping',
+            periods: [
+              { startDate: '2026-08-01', endDate: '2026-08-10' },
+              { startDate: '2026-08-05', endDate: null },
+            ],
+          }),
+          boardDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000b3',
+            title: 'bad dates',
+            periods: [{ startDate: '2026-13-40', endDate: null }],
+          }),
+          boardDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000b4',
+            title: 'end before start',
+            periods: [{ startDate: '2026-08-10', endDate: '2026-08-01' }],
+          }),
+          boardDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000b5',
+            title: 'open not last',
+            periods: [
+              { startDate: '2026-08-01', endDate: null },
+              { startDate: '2026-08-10', endDate: '2026-08-12' },
+            ],
+          }),
+          boardDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000b6',
+            title: 'garbage end',
+            periods: [{ startDate: '2026-08-01', endDate: 'soon' }],
+          }),
+          boardDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000b7',
+            title: 'null entry',
+            periods: [null as never],
+          }),
+        ],
+        checkIns: [],
+      },
+    });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(result.value.boardsCreated).toBe(7);
+
+    // the coherent list replays exactly: aug 1-5 and aug 10-today are
+    // eligible, the gap is not
+    const coherent = await getBoardSummary(
+      harness.deps,
+      '00000000-0000-4000-8000-0000000000b1' as never,
+    );
+    if (!coherent.ok || coherent.value === null) {
+      throw new Error('summary failed');
+    }
+    expect(coherent.value.eligibleDayCount).toBe(26);
+
+    // every distrusted list falls back to one derived lifetime period
+    // starting at the original creation date (aug 1 -> 30 days)
+    for (const id of ['b2', 'b3', 'b4', 'b5', 'b6', 'b7']) {
+      const summary = await getBoardSummary(
+        harness.deps,
+        `00000000-0000-4000-8000-0000000000${id}` as never,
+      );
+      if (!summary.ok || summary.value === null) {
+        throw new Error('summary failed');
+      }
+      expect(summary.value.eligibleDayCount).toBe(30);
+    }
+    await harness.db.closeAsync();
+  });
+
+  it('drops imported amounts that fail the domain gate', async () => {
+    const harness = await createTestHarness();
+    const result = await importSnapshot(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      draft: {
+        source: 'own',
+        boards: [
+          boardDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000c1',
+            title: 'amounts',
+            tracksAmount: true,
+            amountUnit: 'km',
+          }),
+        ],
+        checkIns: [
+          checkInDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000c2',
+            sourceBoardId: '00000000-0000-4000-8000-0000000000c1',
+            logicalDate: '2026-08-02',
+            amount: 2_000_000_000,
+          }),
+          checkInDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000c3',
+            sourceBoardId: '00000000-0000-4000-8000-0000000000c1',
+            logicalDate: '2026-08-03',
+            amount: 1.2345,
+          }),
+          checkInDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000c4',
+            sourceBoardId: '00000000-0000-4000-8000-0000000000c1',
+            logicalDate: '2026-08-04',
+            amount: -3,
+          }),
+          checkInDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000c5',
+            sourceBoardId: '00000000-0000-4000-8000-0000000000c1',
+            logicalDate: '2026-08-05',
+            amount: 2.5,
+          }),
+        ],
+      },
+    });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(result.value.checkInsCreated).toBe(4);
+    const history = await getGroupedCheckInHistory(
+      harness.deps,
+      '00000000-0000-4000-8000-0000000000c1' as never,
+    );
+    if (!history.ok) {
+      throw new Error('history failed');
+    }
+    const amounts = new Map(
+      history.value.months
+        .flatMap((month) => month.days)
+        .map((day) => [day.date, day.checkIns[0].amount]),
+    );
+    expect(amounts.get('2026-08-02' as LogicalDate)).toBeNull();
+    expect(amounts.get('2026-08-03' as LogicalDate)).toBeNull();
+    expect(amounts.get('2026-08-04' as LogicalDate)).toBeNull();
+    expect(amounts.get('2026-08-05' as LogicalDate)).toBe(2.5);
+    await harness.db.closeAsync();
+  });
+
+  it('skips a record with no usable date at all', async () => {
+    const harness = await createTestHarness();
+    const result = await importSnapshot(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      draft: {
+        source: 'own',
+        boards: [
+          boardDraft({ sourceId: '00000000-0000-4000-8000-0000000000d8', title: 'dateless' }),
+        ],
+        checkIns: [
+          checkInDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000d9',
+            sourceBoardId: '00000000-0000-4000-8000-0000000000d8',
+            logicalDate: 'not-a-date',
+            occurredAtUtc: null,
+          }),
+        ],
+      },
+    });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(result.value.checkInsSkipped).toBe(1);
+    expect(result.value.checkInsCreated).toBe(0);
+    await harness.db.closeAsync();
+  });
+
+  it('clamps same-day future instants to now', async () => {
+    const harness = await createTestHarness();
+    const now = harness.clock.nowUtcMs();
+    const result = await importSnapshot(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      draft: {
+        source: 'own',
+        boards: [
+          boardDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000d1',
+            title: 'clock skew',
+            tracksTime: true,
+          }),
+        ],
+        checkIns: [
+          checkInDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000d2',
+            sourceBoardId: '00000000-0000-4000-8000-0000000000d1',
+            logicalDate: '2026-08-30',
+            occurredAtUtc: now + 5 * 60 * 1000,
+          }),
+        ],
+      },
+    });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    const history = await getGroupedCheckInHistory(
+      harness.deps,
+      '00000000-0000-4000-8000-0000000000d1' as never,
+    );
+    if (!history.ok) {
+      throw new Error('history failed');
+    }
+    expect(history.value.months[0].days[0].checkIns[0].occurredAtUtc).toBe(now);
+    await harness.db.closeAsync();
+  });
+
+  it('folds preserved order keys into the generator high-water mark', async () => {
+    const harness = await createTestHarness();
+    const result = await importSnapshot(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      draft: {
+        source: 'own',
+        boards: [
+          boardDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000e1',
+            title: 'late key',
+            orderKey: 'z1',
+          }),
+          boardDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000e2',
+            title: 'early key',
+            orderKey: 'a1',
+          }),
+          boardDraft({
+            sourceId: '00000000-0000-4000-8000-0000000000e3',
+            title: 'generated key',
+            orderKey: null,
+          }),
+        ],
+        checkIns: [],
+      },
+    });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    const active = await listActiveBoards(harness.deps);
+    if (!active.ok) {
+      throw new Error('boards failed');
+    }
+    // the generated key must sort after every preserved key
+    expect(active.value.map((board) => board.title)).toEqual([
+      'early key',
+      'late key',
+      'generated key',
+    ]);
+    await harness.db.closeAsync();
   });
 });
