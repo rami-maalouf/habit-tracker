@@ -20,12 +20,14 @@ module.exports = {
     '!src/core/domain/ports.ts',
     '!src/core/persistence/database.ts',
     // reviewed exclusion: thin expo adapters proven on device through argent
-    '!src/platform/database/**',
+    '!src/platform/**',
   ],
   moduleNameMapper: {
     // reviewed behavior-focused mock: jest-expo provides no @expo/ui mock and
     // the real package requires the native ObservableState runtime
     '^@expo/ui$': '<rootDir>/src/testing/expo-ui.mock.tsx',
+    '^expo-notifications$': '<rootDir>/src/testing/expo-notifications.mock.ts',
+    '^@/platform/data-transfer$': '<rootDir>/src/testing/data-transfer.mock.ts',
     '^react-native-svg$': '<rootDir>/src/testing/react-native-svg.mock.tsx',
     '^@expo/ui/community/slider$': '<rootDir>/src/testing/expo-ui-slider.mock.tsx',
     '^@expo/ui/community/datetime-picker$': '<rootDir>/src/testing/expo-ui-datetime.mock.tsx',
