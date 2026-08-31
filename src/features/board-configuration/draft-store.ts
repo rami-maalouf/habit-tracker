@@ -4,6 +4,15 @@ import type { Board } from '@/core/domain/entities';
 import { boardPalette, boardSymbolAllowlist } from '@/core/domain/entities';
 import type { BoardId } from '@/core/domain/ids';
 
+// reminders drafted on an unsaved board commit together with the board;
+// existing boards edit their reminders directly through commands
+export type DraftReminder = {
+  weekdaysMask: number;
+  minuteOfDay: number;
+  message: string;
+  enabled: boolean;
+};
+
 // one in-flight board draft shared across the create/edit sheet and its
 // options screen; sheets read and write the draft, saving commits it
 export type BoardDraft = {
@@ -19,6 +28,8 @@ export type BoardDraft = {
   tracksTime: boolean;
   startOfDayMinute: number;
   metricsEnabled: boolean;
+  // populated only while boardId is null (a new, unsaved board)
+  reminders: DraftReminder[];
   dirty: boolean;
 };
 
@@ -46,6 +57,7 @@ export function newBoardDraft(): BoardDraft {
     tracksTime: false,
     startOfDayMinute: 0,
     metricsEnabled: true,
+    reminders: [],
     dirty: false,
   };
 }
@@ -64,6 +76,7 @@ export function draftFromBoard(board: Board): BoardDraft {
     tracksTime: board.tracksTime,
     startOfDayMinute: board.startOfDayMinute,
     metricsEnabled: board.metricsEnabled,
+    reminders: [],
     dirty: false,
   };
 }

@@ -50,6 +50,8 @@ export default function RootLayout() {
           <Stack.Screen name="boards/[boardId]/check-ins/index" options={sheet} />
           <Stack.Screen name="boards/[boardId]/check-ins/new" options={halfSheet} />
           <Stack.Screen name="boards/[boardId]/check-ins/[checkInId]" options={halfSheet} />
+          <Stack.Screen name="boards/[boardId]/reminders/new" options={halfSheet} />
+          <Stack.Screen name="boards/[boardId]/reminders/[reminderId]" options={halfSheet} />
           <Stack.Screen name="settings/index" options={sheet} />
           <Stack.Screen name="settings/archived" options={sheet} />
           <Stack.Screen name="settings/import" options={sheet} />

@@ -7,12 +7,15 @@ import { AppText } from '@/components/foundation/app-text';
 import { archiveBoard, createBoard, deleteBoard, updateBoard } from '@/core/domain/commands';
 import { boardPalette, boardSymbolAllowlist } from '@/core/domain/entities';
 import type { BoardId } from '@/core/domain/ids';
+import { createReminder, setReminderEnabled } from '@/core/domain/reminder-commands';
 import type { DomainError } from '@/core/domain/result';
-import { getBoard, getBoardDependentCounts } from '@/core/domain/queries';
+import { getBoard, getBoardDependentCounts, listBoardReminders } from '@/core/domain/queries';
+import { reminderScheduler } from '@/platform/notifications';
 import { minimumTouchTarget } from '@/foundation/accessibility';
 import { radius, radiusCurve, semanticColor, spacing } from '@/theme';
 
 import { BoardSymbol, SevenDayStrip, deriveBoardColors } from '../boards';
+import { formatMinuteOfDay, weekdaySummary } from '../reminders';
 import { InlineError, PrimaryButton, ProductPressable, useScheme } from '../ui';
 import { useProduct, useProductQuery } from '../product-store';
 import type { BoardDraft } from './draft-store';
@@ -50,6 +53,72 @@ function draftToCommandFields(draft: BoardDraft) {
     startOfDayMinute: draft.startOfDayMinute,
     metricsEnabled: draft.metricsEnabled,
   };
+}
+
+// the saved board's reminders list directly from the store; the row
+// switch commits immediately like the platform settings apps do
+function ExistingReminderRows({
+  boardId,
+  onError,
+}: {
+  boardId: BoardId;
+  onError: (error: DomainError) => void;
+}) {
+  const router = useRouter();
+  const { core, invalidate, nextCommandId } = useProduct();
+  const reminders = useProductQuery((c) => listBoardReminders(c, boardId), [boardId]);
+  if (reminders.status !== 'ready') {
+    return null;
+  }
+  return (
+    <>
+      {reminders.value.map((reminder) => (
+        <View
+          key={reminder.id}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}
+        >
+          <View style={{ flex: 1 }}>
+            <ProductPressable
+              onPress={() => router.push(`/boards/${boardId}/reminders/${reminder.id}`)}
+              label={`Reminder ${formatMinuteOfDay(reminder.minuteOfDay)}, ${weekdaySummary(reminder.weekdaysMask)}`}
+              stretch
+              testID={`reminder-row-${reminder.id}`}
+            >
+            <View style={{ gap: spacing.xs }}>
+              <AppText selectable={false}>{formatMinuteOfDay(reminder.minuteOfDay)}</AppText>
+              <AppText variant="footnote" selectable={false}>
+                {weekdaySummary(reminder.weekdaysMask)}
+              </AppText>
+            </View>
+            </ProductPressable>
+          </View>
+          <Switch
+            accessibilityLabel={`Reminder ${formatMinuteOfDay(reminder.minuteOfDay)} enabled`}
+            value={reminder.enabled}
+            onValueChange={(enabled) => {
+              void setReminderEnabled(
+                { ...core, scheduler: reminderScheduler },
+                { commandId: nextCommandId(), reminderId: reminder.id, enabled },
+              ).then((result) => {
+                if (result.ok) {
+                  invalidate();
+                  if (enabled && !result.value.enabled) {
+                    Alert.alert(
+                      'Notifications are off',
+                      'Allow notifications in Settings to turn this reminder on.',
+                    );
+                  }
+                } else {
+                  onError(result.error);
+                }
+              });
+            }}
+            testID={`reminder-toggle-${reminder.id}`}
+          />
+        </View>
+      ))}
+    </>
+  );
 }
 
 function FormRow({ children }: { children: React.ReactNode }) {
@@ -189,6 +258,24 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
         })
       : await createBoard(core, { commandId: nextCommandId(), ...fields });
     if (result.ok) {
+      // a new board commits its drafted reminders with it; every draft was
+      // validated by the reminder editor before it entered the session
+      if (!editing && draft.reminders.length > 0) {
+        const createdBoardId = (result.value as { boardId: BoardId }).boardId;
+        for (const entry of draft.reminders) {
+          await createReminder(
+            { ...core, scheduler: reminderScheduler },
+            {
+              commandId: nextCommandId(),
+              boardId: createdBoardId,
+              weekdaysMask: entry.weekdaysMask,
+              minuteOfDay: entry.minuteOfDay,
+              message: entry.message.length > 0 ? entry.message : null,
+              enabled: entry.enabled,
+            },
+          );
+        }
+      }
       invalidate();
       skipGuardRef.current = true;
       router.back();
@@ -513,10 +600,38 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
         </FormRow>
 
         <FormRow>
-          <ProductPressable label="Add reminder" disabled stretch testID="add-reminder-row">
+          {editing && boardId ? (
+            <ExistingReminderRows boardId={boardId} onError={setError} />
+          ) : (
+            draft.reminders.map((entry, index) => (
+              <ProductPressable
+                key={index}
+                onPress={() => router.push(`/boards/draft/reminders/new?index=${index}`)}
+                label={`Reminder ${formatMinuteOfDay(entry.minuteOfDay)}, ${weekdaySummary(entry.weekdaysMask)}`}
+                stretch
+                testID={`draft-reminder-${index}`}
+              >
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <AppText selectable={false}>{formatMinuteOfDay(entry.minuteOfDay)}</AppText>
+                  <AppText variant="footnote" selectable={false}>
+                    {weekdaySummary(entry.weekdaysMask)}
+                  </AppText>
+                </View>
+              </ProductPressable>
+            ))
+          )}
+          <ProductPressable
+            onPress={() =>
+              router.push(
+                editing && boardId ? `/boards/${boardId}/reminders/new` : '/boards/draft/reminders/new',
+              )
+            }
+            label="Add reminder"
+            stretch
+            testID="add-reminder-row"
+          >
             <AppText selectable={false}>Add reminder…</AppText>
           </ProductPressable>
-          <AppText variant="footnote">Reminders arrive with the reminders update.</AppText>
         </FormRow>
 
         <FormRow>

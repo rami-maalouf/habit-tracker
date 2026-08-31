@@ -4,18 +4,31 @@ import { useEffect, useState } from 'react';
 import { Linking, ScrollView, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
+import { getNotificationOverview } from '@/core/domain/queries';
 import { semanticColor, spacing } from '@/theme';
 
-import { PrimaryButton, useScheme } from '../ui';
+import { InlineError, PrimaryButton, useScheme } from '../ui';
+import { useProductQuery } from '../product-store';
 import { SettingsGroup, SettingsRow } from './rows';
 
 type AuthorizationState = 'loading' | 'granted' | 'denied' | 'undetermined';
 
-// current notification authorization; reminder rules arrive with the
-// reminders stage and this surface reports readiness honestly until then
+function errorLabel(code: string): string {
+  if (code === 'capacity_exceeded') {
+    return 'Too many scheduled notifications on this device.';
+  }
+  if (code === 'schedule_failed') {
+    return 'The system rejected the schedule. It retries automatically.';
+  }
+  return 'The schedule could not be created.';
+}
+
+// current authorization, enabled reminder count, and schedule errors, with
+// the settings path when permission was denied
 export function NotificationsScreen() {
   const scheme = useScheme();
   const [authorization, setAuthorization] = useState<AuthorizationState>('loading');
+  const overview = useProductQuery((c) => getNotificationOverview(c), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,11 +74,25 @@ export function NotificationsScreen() {
       >
         <SettingsGroup>
           <SettingsRow title="Notification permission" detail={statusLabel} testID="notifications-status" />
-          <SettingsRow title="Enabled reminders" detail="0" testID="notifications-reminder-count" />
+          <SettingsRow
+            title="Enabled reminders"
+            detail={overview.status === 'ready' ? String(overview.value.enabledReminderCount) : '…'}
+            testID="notifications-reminder-count"
+          />
         </SettingsGroup>
-        <AppText variant="footnote" testID="notifications-interim">
-          Per-board reminders arrive with the reminders update. The app asks for permission the
-          first time you enable one.
+        {overview.status === 'ready' && overview.value.scheduleErrors.length > 0 ? (
+          <View style={{ gap: spacing.sm }} testID="notifications-schedule-errors">
+            {overview.value.scheduleErrors.map((entry) => (
+              <InlineError
+                key={entry.reminderId}
+                message={`${entry.boardTitle}: ${errorLabel(entry.code)}`}
+              />
+            ))}
+          </View>
+        ) : null}
+        <AppText variant="footnote">
+          The app asks for permission the first time you enable a reminder. Reminders stay on
+          this device.
         </AppText>
         {authorization === 'denied' ? (
           <PrimaryButton

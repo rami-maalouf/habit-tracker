@@ -1,12 +1,19 @@
+import { router } from 'expo-router';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { AppState, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
 import type { CommandId } from '@/core/domain/ids';
+import { reconcileReminderSchedules } from '@/core/domain/reminder-commands';
 import type { DomainError, DomainResult } from '@/core/domain/result';
 import type { ProductCore } from '@/platform/database/product-core';
 import { getProductCore } from '@/platform/database/product-core';
+import {
+  addNotificationTapListener,
+  getInitialNotificationBoardId,
+  reminderScheduler,
+} from '@/platform/notifications';
 import { spacing } from '@/theme';
 
 type ProductContextValue = {
@@ -73,17 +80,61 @@ export function ProductProvider({ children, coreOverride }: ProductProviderProps
 
   const invalidate = useCallback(() => setVersion((current) => current + 1), []);
 
+  // the reminder reconciler reruns on cold start and every return to the
+  // foreground, covering permission flips, time changes, and restores
+  const reconcile = useCallback(() => {
+    if (state.status !== 'ready') {
+      return;
+    }
+    const core = state.core;
+    void reconcileReminderSchedules(
+      { ...core, scheduler: reminderScheduler },
+      { commandId: core.ids.uuid() as CommandId },
+    ).then((result) => {
+      if (result.ok && result.value.updated > 0) {
+        invalidate();
+      }
+    });
+  }, [invalidate, state]);
+
+  useEffect(() => {
+    reconcile();
+  }, [reconcile]);
+
   // out-of-process writers (widgets, automations, sync) mutate the same
   // database; returning to the foreground refreshes every mounted query.
   // the in-process database-change hook lands with the widget stage.
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') {
+    const subscription = AppState.addEventListener('change', (appState) => {
+      if (appState === 'active') {
         invalidate();
+        reconcile();
       }
     });
     return () => subscription?.remove?.();
-  }, [invalidate]);
+  }, [invalidate, reconcile]);
+
+  // a tapped reminder deep-links to its board's add check-in sheet, both
+  // while running and when the tap cold-started the app
+  useEffect(() => {
+    if (state.status !== 'ready') {
+      return;
+    }
+    const open = (boardId: string) => {
+      router.push(`/boards/${boardId}/check-ins/new`);
+    };
+    let cancelled = false;
+    void getInitialNotificationBoardId().then((boardId) => {
+      if (boardId && !cancelled) {
+        open(boardId);
+      }
+    });
+    const remove = addNotificationTapListener(open);
+    return () => {
+      cancelled = true;
+      remove();
+    };
+  }, [state.status]);
 
   const value = useMemo<ProductContextValue | null>(() => {
     if (state.status !== 'ready') {
