@@ -1,6 +1,6 @@
 import { archiveBoard, createCheckIn, deleteBoard, dismissMetricsEducation, setICloudSyncEnabled, updateBoard } from '@/core/domain/commands';
 import type { BoardId, LogicalDate } from '@/core/domain/ids';
-import { getBoard, getGroupedCheckInHistory, getMetricsEducationDismissed, listActiveBoards, listArchivedBoards } from '@/core/domain/queries';
+import { getBoard, getGroupedCheckInHistory, getMetricsEducationDismissed, getSyncSummary, listActiveBoards, listArchivedBoards } from '@/core/domain/queries';
 import { runSync, retryDelayMs } from '@/core/sync/engine';
 import type { SyncDeps } from '@/core/sync/engine';
 import { SYNC_SCHEMA_VERSION, periodEntityId } from '@/core/sync/records';
@@ -626,6 +626,51 @@ describe('sync engine edges', () => {
     expect(row?.end_date).toBeNull();
     expect(row?.deleted_at).toBeNull();
     await harness.db.closeAsync();
+  });
+
+  it('summarizes sync state for the settings surface', async () => {
+    const { harness, deps } = await setup();
+    await createBoardForTest(harness);
+    const before = await getSyncSummary(harness.deps);
+    if (!before.ok) {
+      throw new Error('summary failed');
+    }
+    expect(before.value.enabled).toBe(true);
+    expect(before.value.pendingChanges).toBeGreaterThan(0);
+    expect(before.value.lastSuccessAtUtc).toBeNull();
+
+    await runSync(deps);
+    const after = await getSyncSummary(harness.deps);
+    if (!after.ok) {
+      throw new Error('summary failed');
+    }
+    expect(after.value.pendingChanges).toBe(0);
+    expect(after.value.lastSuccessAtUtc).toBe(harness.clock.nowUtcMs());
+    await harness.db.closeAsync();
+  });
+
+  it('reads an empty outbox count and a missing settings row defensively', async () => {
+    const { getSyncSummary: actual } = jest.requireActual<
+      typeof import('@/core/domain/queries')
+    >('@/core/domain/queries');
+    const stubDb = {
+      withTransactionAsync: async <T,>(work: (tx: unknown) => Promise<T>) =>
+        work({
+          getFirstAsync: async (sql: string) =>
+            sql.includes('sync_state') || sql.includes('app_settings') ? null : null,
+        }),
+    };
+    const result = await actual(
+      { db: stubDb as never, clock: { nowUtcMs: () => 0, timeZoneId: () => 'UTC' } },
+    );
+    if (!result.ok) {
+      throw new Error('summary failed');
+    }
+    expect(result.value).toEqual({
+      enabled: false,
+      pendingChanges: 0,
+      lastSuccessAtUtc: null,
+    });
   });
 
   it('parses and rejects period entity ids', () => {

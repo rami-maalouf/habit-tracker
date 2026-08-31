@@ -45,7 +45,7 @@ import {
   listBoardReminders as listBoardReminderRows,
   listRemindersForReconcile,
 } from '../persistence/repositories/reminders';
-import { getSettings, listBoardPeriods } from '../persistence/repositories/support';
+import { getSettings, getSyncState, listBoardPeriods } from '../persistence/repositories/support';
 import type { Board, CheckIn, Reminder, WidgetBoardRow } from './entities';
 import type { BoardId, CheckInId, LogicalDate, ReminderId } from './ids';
 import type { Clock } from './ports';
@@ -585,6 +585,28 @@ export function getMetricsEducationDismissed(
 
 export function getAppSettings(deps: QueryDeps) {
   return runQuery(deps, (tx) => getSettings(tx));
+}
+
+export type SyncSummary = {
+  enabled: boolean;
+  // outbox depth, so the ui can say what is still waiting to upload
+  pendingChanges: number;
+  lastSuccessAtUtc: number | null;
+};
+
+export function getSyncSummary(deps: QueryDeps): Promise<DomainResult<SyncSummary>> {
+  return runQuery(deps, async (tx) => {
+    const row = await tx.getFirstAsync<{ total: number }>(
+      'SELECT COUNT(*) AS total FROM mutation_outbox',
+    );
+    const state = await getSyncState(tx);
+    const settings = await getSettings(tx);
+    return {
+      enabled: settings?.iCloudSyncEnabled === true,
+      pendingChanges: row?.total ?? 0,
+      lastSuccessAtUtc: state.lastSuccessAtUtc,
+    };
+  });
 }
 
 // --- reminders --------------------------------------------------------------

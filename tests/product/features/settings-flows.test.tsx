@@ -307,15 +307,105 @@ describe('notifications, icloud, icon, and timeline surfaces', () => {
     notificationsMock.reject = false;
   });
 
-  it('renders the explicit icloud, icon, and timeline states', async () => {
-    renderRouter('src/app', { initialUrl: '/settings/icloud' });
-    expect(await screen.findByTestId('icloud-interim')).toBeOnTheScreen();
-
+  it('renders the explicit icon and timeline states', async () => {
     renderRouter('src/app', { initialUrl: '/settings/app-icon' });
     expect(await screen.findByTestId('app-icon-interim')).toBeOnTheScreen();
     expect(screen.getByTestId('icon-preview-midnight')).toBeOnTheScreen();
 
     renderRouter('src/app', { initialUrl: '/settings/timeline' });
     expect(await screen.findByText('In development')).toBeOnTheScreen();
+  });
+});
+
+describe('icloud sync settings', () => {
+  beforeEach(() => {
+    resetProductCoreForTests();
+    alertSpy.mockClear();
+  });
+
+  it('explains where the data goes before turning sync on', async () => {
+    renderRouter('src/app', { initialUrl: '/settings/icloud' });
+    await screen.findByTestId('icloud-toggle');
+    expect(screen.getByTestId('icloud-status')).toHaveTextContent(/Off/);
+    // the transport is unavailable in this build and says so
+    expect(screen.getByTestId('icloud-unavailable')).toHaveTextContent(
+      /Apple Developer team/,
+    );
+
+    // cancelling the explanation leaves sync off
+    alertSpy.mockImplementationOnce((_title, _message, buttons) => {
+      buttons?.find((button) => button.style === 'cancel')?.onPress?.();
+    });
+    fireEvent(screen.getByTestId('icloud-toggle'), 'valueChange', true);
+    await settle();
+    expect(alertSpy).toHaveBeenCalledWith(
+      'Turn on iCloud Sync?',
+      expect.stringContaining('your own private iCloud account'),
+      expect.anything(),
+    );
+    expect(screen.getByTestId('icloud-status')).toHaveTextContent(/Off/);
+  });
+
+  it('reports needs attention when the unavailable transport is used', async () => {
+    const opened = await getProductCore();
+    if (!opened.ok) {
+      throw new Error('core failed');
+    }
+    const created = await createBoard(opened.value, {
+      commandId: newCommandId(),
+      title: 'queued board',
+      symbol: 'star.fill',
+      accentHex: '#70A7FF',
+      usesTintedBackground: true,
+      tracksAmount: false,
+      tracksTime: false,
+      startOfDayMinute: 0,
+      metricsEnabled: true,
+    });
+    if (!created.ok) {
+      throw new Error(created.error.message);
+    }
+    renderRouter('src/app', { initialUrl: '/settings/icloud' });
+    await screen.findByTestId('icloud-toggle');
+    // the outbox depth is visible before any sync runs
+    expect(screen.getByTestId('icloud-pending')).toHaveTextContent(/[1-9]/);
+    expect(screen.getByTestId('icloud-last-sync')).toHaveTextContent(/Never/);
+
+    alertSpy.mockImplementationOnce((_title, _message, buttons) => {
+      buttons?.find((button) => button.text === 'Turn On')?.onPress?.();
+    });
+    fireEvent(screen.getByTestId('icloud-toggle'), 'valueChange', true);
+    await settle();
+    await settle();
+    expect(screen.getByTestId('icloud-status')).toHaveTextContent(/Needs Attention/);
+    // every local change is still queued, nothing was lost
+    expect(screen.getByTestId('icloud-pending')).toHaveTextContent(/[1-9]/);
+
+    // an enabled sync exposes a manual Sync Now that reports the same state
+    await press('icloud-sync-now');
+    expect(screen.getByTestId('icloud-status')).toHaveTextContent(/Needs Attention/);
+
+    // turning it back off needs no confirmation and reports off
+    fireEvent(screen.getByTestId('icloud-toggle'), 'valueChange', false);
+    await settle();
+    expect(screen.getByTestId('icloud-status')).toHaveTextContent(/Off/);
+    expect(screen.queryByTestId('icloud-sync-now')).toBeNull();
+  });
+
+  it('shows the last successful sync time once one exists', async () => {
+    const opened = await getProductCore();
+    if (!opened.ok) {
+      throw new Error('core failed');
+    }
+    await opened.value.db.runAsync(
+      `INSERT INTO sync_state (id, change_token, zone_created, retry_state, last_success_at)
+       VALUES (1, '4', 1, NULL, ?)
+       ON CONFLICT (id) DO UPDATE SET last_success_at = excluded.last_success_at`,
+      [Date.UTC(2026, 7, 30, 16, 0)],
+    );
+    renderRouter('src/app', { initialUrl: '/settings/icloud' });
+    await screen.findByTestId('icloud-last-sync');
+    expect(screen.getByTestId('icloud-last-sync')).not.toHaveTextContent(/Never/);
+    expect(screen.getByTestId('icloud-last-sync')).toHaveTextContent(/2026/);
   });
 });
