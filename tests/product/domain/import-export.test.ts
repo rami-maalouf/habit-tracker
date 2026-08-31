@@ -351,3 +351,296 @@ describe('own export round trip', () => {
     );
   });
 });
+
+
+describe('parser and command edge coverage', () => {
+  it('applies defaults for minimal own-export records', () => {
+    const minimal = JSON.stringify({
+      format: 'ripples.export',
+      exportVersion: 1,
+      boards: [{ id: '00000000-0000-4000-8000-0000000000aa', title: 'bare' }],
+      checkIns: [
+        {
+          id: '00000000-0000-4000-8000-0000000000bb',
+          boardId: '00000000-0000-4000-8000-0000000000aa',
+          logicalDate: '2026-08-01',
+        },
+        {
+          id: '00000000-0000-4000-8000-0000000000cc',
+          boardId: '00000000-0000-4000-8000-0000000000aa',
+          logicalDate: '2026-08-02',
+          occurredAtUtc: 1780000000000,
+          timeZoneId: 'America/New_York',
+          offsetMinutes: -240,
+          amount: 2,
+          note: 'full',
+          createdAtUtc: 1780000000000,
+        },
+      ],
+    });
+    const parsed = parseOwnExport(minimal);
+    if (!parsed.ok) {
+      throw new Error(parsed.error.message);
+    }
+    const board = parsed.value.boards[0];
+    expect(board.symbol.length).toBeGreaterThan(0);
+    expect(board.accentHex.startsWith('#')).toBe(true);
+    expect(board.quickAmount).toBe(1);
+    expect(board.startOfDayMinute).toBe(0);
+    expect(board.periods).toBeNull();
+    expect(board.orderKey).toBeNull();
+    const [bare, full] = parsed.value.checkIns;
+    expect(bare.occurredAtUtc).toBeNull();
+    expect(bare.createdAtUtc).toBe(0);
+    expect(full.timeZoneId).toBe('America/New_York');
+    expect(full.offsetMinutes).toBe(-240);
+  });
+
+  it('covers csv oddities: short rows, bad numbers, and no trailing newline', () => {
+    const header = RIPPLES_CSV.split('\n')[0];
+    // a truncated board row still parses through the safe cell accessor
+    const short = `${header}\nBoard,BB,"short row"`;
+    const parsedShort = parseRipplesCsv(short);
+    expect(parsedShort.ok).toBe(false);
+
+    const odd = `${header}\nBoard,BB,"odd board",,true,false,abc,notanumber,,2026-05-04T02:06:28Z,,,,,\nCheckin,,,,,,,,,,C1,BB,abc,,2026-05-05T02:06:28Z`;
+    const parsedOdd = parseRipplesCsv(odd);
+    if (!parsedOdd.ok) {
+      throw new Error(parsedOdd.error.message);
+    }
+    expect(parsedOdd.value.boards[0].startOfDayMinute).toBe(0);
+    expect(parsedOdd.value.boards[0].quickAmount).toBe(1);
+    expect(parsedOdd.value.boards[0].tracksTime).toBe(true);
+    expect(parsedOdd.value.boards[0].metricsEnabled).toBe(false);
+    // a non-numeric amount becomes no amount
+    expect(parsedOdd.value.checkIns[0].amount).toBeNull();
+
+    const zeroDefault = `${header}\nBoard,BB,"zero default","Cups",false,true,0,0.0,,2026-05-04T02:06:28Z,,,,,`;
+    const parsedZero = parseRipplesCsv(zeroDefault);
+    if (!parsedZero.ok) {
+      throw new Error(parsedZero.error.message);
+    }
+    expect(parsedZero.value.boards[0].quickAmount).toBe(1);
+
+    expect(parseCsv('a,')).toEqual([['a', '']]);
+    expect(parseCsv('a,b')).toEqual([['a', 'b']]);
+  });
+
+  it('skips own-format records with malformed uuids and falls back zones', async () => {
+    const harness = await createTestHarness();
+    const result = await importSnapshot(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      draft: {
+        source: 'own',
+        boards: [
+          {
+            sourceId: 'not-a-uuid',
+            title: 'bad id',
+            symbol: 'star.fill',
+            accentHex: '#78D98B',
+            usesTintedBackground: true,
+            tracksAmount: false,
+            amountUnit: null,
+            quickAmount: 1,
+            tracksTime: false,
+            startOfDayMinute: 0,
+            metricsEnabled: true,
+            createdAtUtc: Date.UTC(2026, 7, 1),
+            archivedAtUtc: null,
+            preserveId: true,
+            periods: null,
+            orderKey: null,
+          },
+          {
+            sourceId: '00000000-0000-4000-8000-0000000000dd',
+            title: 'timed restore',
+            symbol: 'star.fill',
+            accentHex: '#78D98B',
+            usesTintedBackground: true,
+            tracksAmount: false,
+            amountUnit: null,
+            quickAmount: 1,
+            tracksTime: true,
+            startOfDayMinute: 0,
+            metricsEnabled: true,
+            createdAtUtc: Date.UTC(2026, 7, 1),
+            archivedAtUtc: null,
+            preserveId: true,
+            periods: [{ startDate: '2026-08-01', endDate: '2026-08-10' }],
+            orderKey: 'b0',
+          },
+        ],
+        checkIns: [
+          {
+            sourceId: 'also-not-a-uuid',
+            sourceBoardId: '00000000-0000-4000-8000-0000000000dd',
+            occurredAtUtc: Date.UTC(2026, 7, 2, 12, 0),
+            createdAtUtc: Date.UTC(2026, 7, 2, 12, 0),
+            amount: null,
+            note: null,
+            logicalDate: '2026-08-02',
+            timeZoneId: null,
+            offsetMinutes: null,
+            preserveId: true,
+          },
+          {
+            sourceId: '00000000-0000-4000-8000-0000000000ee',
+            sourceBoardId: '00000000-0000-4000-8000-0000000000dd',
+            occurredAtUtc: Date.UTC(2026, 7, 3, 12, 0),
+            createdAtUtc: Date.UTC(2026, 7, 3, 12, 0),
+            amount: null,
+            note: null,
+            logicalDate: '2026-08-03',
+            timeZoneId: null,
+            offsetMinutes: null,
+            preserveId: true,
+          },
+        ],
+      },
+    });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(result.value.boardsSkipped).toBe(1);
+    expect(result.value.boardsCreated).toBe(1);
+    expect(result.value.checkInsSkipped).toBe(1);
+    expect(result.value.checkInsCreated).toBe(1);
+
+    // a restored timed check-in without a recorded zone falls back to the
+    // device zone and derives its offset
+    const history = await getGroupedCheckInHistory(
+      harness.deps,
+      '00000000-0000-4000-8000-0000000000dd' as never,
+    );
+    if (!history.ok) {
+      throw new Error('history failed');
+    }
+    const record = history.value.months[0].days[0].checkIns[0];
+    expect(record.timeZoneId).toBe('America/New_York');
+    expect(record.offsetMinutes).not.toBeNull();
+    await harness.db.closeAsync();
+  });
+
+  it('covers remaining parser sides: empty arrays, escaped quotes, valid defaults', () => {
+    // an export without array fields parses to an empty draft
+    const empty = parseOwnExport('{"format":"ripples.export","exportVersion":1}');
+    if (!empty.ok) {
+      throw new Error(empty.error.message);
+    }
+    expect(empty.value.boards).toHaveLength(0);
+    expect(empty.value.checkIns).toHaveLength(0);
+    // a valid-id board with a non-string title is malformed
+    expect(
+      parseOwnExport(
+        '{"format":"ripples.export","exportVersion":1,"boards":[{"id":"x","title":5}],"checkIns":[]}',
+      ).ok,
+    ).toBe(false);
+    // doubled quotes inside a quoted field
+    expect(parseCsv('"a""b",c')).toEqual([['a"b', 'c']]);
+
+    const header = RIPPLES_CSV.split('\n')[0];
+    const validDefault = `${header}\nBoard,BB,"five default","Cups",false,true,5,,,2026-05-04T02:06:28Z,,,,,`;
+    const parsed = parseRipplesCsv(validDefault);
+    if (!parsed.ok) {
+      throw new Error(parsed.error.message);
+    }
+    expect(parsed.value.boards[0].quickAmount).toBe(5);
+    expect(parsed.value.boards[0].startOfDayMinute).toBe(0);
+  });
+
+  it('keeps a restored offset and zone verbatim on a timed board', async () => {
+    const harness = await createTestHarness();
+    const result = await importSnapshot(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      draft: {
+        source: 'own',
+        boards: [
+          {
+            sourceId: '00000000-0000-4000-8000-0000000000f1',
+            title: 'zone keeper',
+            symbol: 'star.fill',
+            accentHex: '#78D98B',
+            usesTintedBackground: true,
+            tracksAmount: false,
+            amountUnit: null,
+            quickAmount: 1,
+            tracksTime: true,
+            startOfDayMinute: 0,
+            metricsEnabled: true,
+            createdAtUtc: Date.UTC(2026, 7, 1),
+            archivedAtUtc: null,
+            preserveId: true,
+            periods: [{ startDate: '2026-08-01', endDate: null }],
+            orderKey: 'c0',
+          },
+        ],
+        checkIns: [
+          {
+            sourceId: '00000000-0000-4000-8000-0000000000f2',
+            sourceBoardId: '00000000-0000-4000-8000-0000000000f1',
+            occurredAtUtc: Date.UTC(2026, 7, 2, 12, 0),
+            createdAtUtc: Date.UTC(2026, 7, 2, 12, 0),
+            amount: null,
+            note: null,
+            logicalDate: '2026-08-02',
+            timeZoneId: 'Europe/Berlin',
+            offsetMinutes: 120,
+            preserveId: true,
+          },
+        ],
+      },
+    });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    const history = await getGroupedCheckInHistory(
+      harness.deps,
+      '00000000-0000-4000-8000-0000000000f1' as never,
+    );
+    if (!history.ok) {
+      throw new Error('history failed');
+    }
+    const record = history.value.months[0].days[0].checkIns[0];
+    expect(record.timeZoneId).toBe('Europe/Berlin');
+    expect(record.offsetMinutes).toBe(120);
+    await harness.db.closeAsync();
+  });
+
+  it('keeps error messages from real export failures', async () => {
+    const harness = await createTestHarness();
+    const broken = Object.create(harness.db) as typeof harness.db;
+    broken.withTransactionAsync = async () => {
+      throw new Error('genuine failure');
+    };
+    const snapshot = await getExportSnapshot({ db: broken, clock: harness.clock }, META);
+    expect(snapshot.ok).toBe(false);
+    if (!snapshot.ok) {
+      expect(snapshot.error.message).toContain('genuine failure');
+    }
+    await harness.db.closeAsync();
+  });
+
+  it('stringifies non-error export failures', async () => {
+    const harness = await createTestHarness();
+    const broken = Object.create(harness.db) as typeof harness.db;
+    broken.withTransactionAsync = async () => {
+      throw 'not an error object';
+    };
+    const snapshot = await getExportSnapshot({ db: broken, clock: harness.clock }, META);
+    expect(snapshot.ok).toBe(false);
+    if (!snapshot.ok) {
+      expect(snapshot.error.message).toContain('not an error object');
+    }
+    await harness.db.closeAsync();
+  });
+
+  it('wraps export failures from a closed store', async () => {
+    const harness = await createTestHarness();
+    await harness.db.closeAsync();
+    const snapshot = await getExportSnapshot(harness.deps, META);
+    expect(snapshot.ok).toBe(false);
+    if (!snapshot.ok) {
+      expect(snapshot.error.message).toContain('The export could not be generated');
+    }
+  });
+});

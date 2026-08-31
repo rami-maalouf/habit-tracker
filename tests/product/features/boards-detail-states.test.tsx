@@ -196,7 +196,7 @@ describe('home extras', () => {
     await screen.findByTestId('empty-create-board');
     await press('open-settings');
     expect(screen).toHavePathname('/settings');
-    expect(await screen.findByTestId('settings-interim')).toBeOnTheScreen();
+    expect(await screen.findByTestId('settings-notifications')).toBeOnTheScreen();
   });
 
   it('expires the undo window after five seconds', async () => {

@@ -1,4 +1,4 @@
-import { currentLogicalDate, offsetMinutesAt } from '../calendar/logical-date';
+import { compareLogicalDates, currentLogicalDate, offsetMinutesAt } from '../calendar/logical-date';
 import type { ImportDraft } from '../export/import-parsers';
 import type { SqlDatabase, SqlExecutor } from '../persistence/database';
 import { rebuildWidgetRows } from '../persistence/projections/widget-rows';
@@ -790,7 +790,7 @@ export function importSnapshot(
             fields.value.startOfDayMinute,
           );
           const endDate =
-            compareLogicalDatesForImport(archivedDate, startDate) < 0 ? startDate : archivedDate;
+            compareLogicalDates(archivedDate, startDate) < 0 ? startDate : archivedDate;
           await closeOpenPeriod(tx, boardId, endDate, mutationStamp);
         }
         await appendOutbox(tx, 'activity_period', String(periodId), mutationStamp, now);
@@ -875,7 +875,3 @@ export function importSnapshot(
   });
 }
 
-// local comparator avoids widening the calendar import surface
-function compareLogicalDatesForImport(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}

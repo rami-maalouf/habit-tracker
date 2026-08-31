@@ -128,7 +128,9 @@ export function getExportSnapshot(
           checkIns: exportCheckIns,
           reminders: [] as never[],
           settings: {
-            metricsEducationDismissed: settings?.metricsEducationDismissed ?? [],
+            // bootstrap seeds the settings row, so it always exists here
+            metricsEducationDismissed: (settings as NonNullable<typeof settings>)
+              .metricsEducationDismissed,
           },
         };
       });
