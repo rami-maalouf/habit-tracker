@@ -1,4 +1,5 @@
 import { currentLogicalDate, offsetMinutesAt } from '../calendar/logical-date';
+import type { ImportDraft } from '../export/import-parsers';
 import type { SqlDatabase, SqlExecutor } from '../persistence/database';
 import { rebuildWidgetRows } from '../persistence/projections/widget-rows';
 import {
@@ -658,4 +659,223 @@ export function dismissMetricsEducation(
     }
     return ok(undefined);
   });
+}
+
+// --- import ---------------------------------------------------------------
+
+export type ImportSnapshotInput = {
+  commandId: CommandId;
+  draft: ImportDraft;
+};
+
+export type ImportSummary = {
+  boardsCreated: number;
+  boardsSkipped: number;
+  checkInsCreated: number;
+  checkInsSkipped: number;
+};
+
+// one exclusive transaction maps normalized import drafts onto real
+// records: an own-format restore keeps original ids and periods and skips
+// records that already exist, while a ripples csv import always creates
+// fresh records and derives periods and logical dates from its instants
+export function importSnapshot(
+  deps: CommandDeps,
+  input: ImportSnapshotInput,
+): Promise<DomainResult<ImportSummary>> {
+  return runCommand(deps, input.commandId, async ({ tx, now, timeZoneId, stamp }) => {
+    const summary: ImportSummary = {
+      boardsCreated: 0,
+      boardsSkipped: 0,
+      checkInsCreated: 0,
+      checkInsSkipped: 0,
+    };
+    const boardIdBySource = new Map<string, BoardId>();
+    const boardMeta = new Map<
+      BoardId,
+      { startOfDayMinute: number; tracksAmount: boolean; tracksTime: boolean }
+    >();
+    let lastKey = await lastActiveOrderKey(tx);
+
+    for (const draft of input.draft.boards) {
+      // invalid records skip individually instead of failing the import
+      const fields = validateBoardFields({
+        title: draft.title,
+        symbol: draft.symbol,
+        accentHex: draft.accentHex,
+        tracksAmount: draft.tracksAmount,
+        amountUnit: draft.amountUnit,
+        quickAmount: draft.quickAmount,
+        startOfDayMinute: draft.startOfDayMinute,
+      });
+      if (!fields.ok) {
+        summary.boardsSkipped += 1;
+        continue;
+      }
+      if (draft.preserveId) {
+        if (!isUuidV4(draft.sourceId)) {
+          summary.boardsSkipped += 1;
+          continue;
+        }
+        const existing = await getBoardById(tx, draft.sourceId as BoardId);
+        if (existing) {
+          // a restore over existing data keeps the live record and still
+          // routes the file's check-ins to it
+          boardIdBySource.set(draft.sourceId, existing.id);
+          boardMeta.set(existing.id, {
+            startOfDayMinute: existing.startOfDayMinute,
+            tracksAmount: existing.tracksAmount,
+            tracksTime: existing.tracksTime,
+          });
+          summary.boardsSkipped += 1;
+          continue;
+        }
+      }
+      const boardId = (draft.preserveId ? draft.sourceId : deps.ids.uuid()) as BoardId;
+      const mutationStamp = stamp();
+      const createdAt = Math.min(draft.createdAtUtc, now);
+      const archivedAt =
+        draft.archivedAtUtc === null ? null : Math.min(draft.archivedAtUtc, now);
+      const orderKey = draft.orderKey ?? orderKeyAfter(lastKey);
+      if (draft.orderKey === null) {
+        lastKey = orderKey;
+      }
+      const board: Board = {
+        id: boardId,
+        title: fields.value.title,
+        symbol: fields.value.symbol,
+        accentHex: fields.value.accentHex,
+        usesTintedBackground: draft.usesTintedBackground,
+        tracksAmount: draft.tracksAmount,
+        amountUnit: fields.value.amountUnit,
+        quickAmount: fields.value.quickAmount,
+        tracksTime: draft.tracksTime,
+        startOfDayMinute: fields.value.startOfDayMinute,
+        metricsEnabled: draft.metricsEnabled,
+        orderKey,
+        archivedAt,
+        createdAt,
+        updatedAt: now,
+        mutationStamp,
+        deletedAt: null,
+      };
+      await insertBoard(tx, board);
+      await appendOutbox(tx, 'board', boardId, mutationStamp, now);
+      if (draft.periods !== null) {
+        // an own-format restore replays its recorded activity periods
+        for (const period of draft.periods) {
+          const periodId = await insertPeriod(
+            tx,
+            boardId,
+            period.startDate as LogicalDate,
+            mutationStamp,
+          );
+          if (period.endDate !== null) {
+            await closeOpenPeriod(tx, boardId, period.endDate as LogicalDate, mutationStamp);
+          }
+          await appendOutbox(tx, 'activity_period', String(periodId), mutationStamp, now);
+        }
+      } else {
+        // a ripples import derives one period from creation to archive
+        const startDate = currentLogicalDate(
+          createdAt,
+          timeZoneId,
+          fields.value.startOfDayMinute,
+        );
+        const periodId = await insertPeriod(tx, boardId, startDate, mutationStamp);
+        if (archivedAt !== null) {
+          const archivedDate = currentLogicalDate(
+            archivedAt,
+            timeZoneId,
+            fields.value.startOfDayMinute,
+          );
+          const endDate =
+            compareLogicalDatesForImport(archivedDate, startDate) < 0 ? startDate : archivedDate;
+          await closeOpenPeriod(tx, boardId, endDate, mutationStamp);
+        }
+        await appendOutbox(tx, 'activity_period', String(periodId), mutationStamp, now);
+      }
+      boardIdBySource.set(draft.sourceId, boardId);
+      boardMeta.set(boardId, {
+        startOfDayMinute: fields.value.startOfDayMinute,
+        tracksAmount: draft.tracksAmount,
+        tracksTime: draft.tracksTime,
+      });
+      summary.boardsCreated += 1;
+    }
+
+    for (const draft of input.draft.checkIns) {
+      const boardId = boardIdBySource.get(draft.sourceBoardId);
+      if (!boardId) {
+        summary.checkInsSkipped += 1;
+        continue;
+      }
+      if (draft.preserveId && draft.sourceId !== null) {
+        if (!isUuidV4(draft.sourceId)) {
+          summary.checkInsSkipped += 1;
+          continue;
+        }
+        const existing = await getCheckInById(tx, draft.sourceId as CheckInId);
+        if (existing) {
+          summary.checkInsSkipped += 1;
+          continue;
+        }
+      }
+      const meta = boardMeta.get(boardId) as {
+        startOfDayMinute: number;
+        tracksAmount: boolean;
+        tracksTime: boolean;
+      };
+      const instant = draft.occurredAtUtc;
+      const logicalDate =
+        draft.logicalDate !== null
+          ? (draft.logicalDate as LogicalDate)
+          : currentLogicalDate(instant as number, timeZoneId, meta.startOfDayMinute);
+      const today = currentLogicalDate(now, timeZoneId, meta.startOfDayMinute);
+      if (logicalDate > today) {
+        // future rows never enter the store
+        summary.checkInsSkipped += 1;
+        continue;
+      }
+      const note = validateNote(draft.note);
+      const mutationStamp = stamp();
+      const checkInId = (
+        draft.preserveId && draft.sourceId !== null ? draft.sourceId : deps.ids.uuid()
+      ) as CheckInId;
+      const storedInstant = meta.tracksTime ? instant : null;
+      const checkIn: CheckIn = {
+        id: checkInId,
+        boardId,
+        logicalDate,
+        occurredAtUtc: storedInstant,
+        timeZoneId:
+          storedInstant === null ? null : (draft.timeZoneId ?? timeZoneId),
+        offsetMinutes:
+          storedInstant === null
+            ? null
+            : (draft.offsetMinutes ?? offsetMinutesAt(storedInstant, timeZoneId)),
+        amount:
+          meta.tracksAmount && draft.amount !== null && draft.amount > 0 ? draft.amount : null,
+        // an over-long note is dropped, not a reason to lose the record
+        note: note.ok ? note.value : null,
+        source: 'app',
+        idempotencyKey: deps.ids.uuid() as CommandId,
+        createdAt: Math.min(draft.createdAtUtc, now),
+        updatedAt: now,
+        mutationStamp,
+        deletedAt: null,
+      };
+      await insertCheckIn(tx, checkIn);
+      await appendOutbox(tx, 'check_in', checkInId, mutationStamp, now);
+      summary.checkInsCreated += 1;
+    }
+
+    await rebuildWidgetRows(tx, now, timeZoneId);
+    return ok(summary);
+  });
+}
+
+// local comparator avoids widening the calendar import surface
+function compareLogicalDatesForImport(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
