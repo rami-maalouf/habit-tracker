@@ -1,5 +1,6 @@
 import { listActiveBoards, listArchivedBoards } from '../persistence/repositories/boards';
 import { listBoardCheckIns } from '../persistence/repositories/check-ins';
+import { listBoardReminders } from '../persistence/repositories/reminders';
 import { getSettings, listBoardPeriods } from '../persistence/repositories/support';
 import type { QueryDeps } from '../domain/queries';
 import type { DomainResult } from '../domain/result';
@@ -40,6 +41,18 @@ export type ExportCheckIn = {
   createdAtUtc: number;
 };
 
+export type ExportReminder = {
+  id: string;
+  boardId: string;
+  weekdaysMask: number;
+  minuteOfDay: number;
+  message: string | null;
+  // rules and enabled state ship even when permission is denied; native
+  // identifiers and schedule state stay on the device
+  enabled: boolean;
+  createdAtUtc: number;
+};
+
 export type ExportSnapshot = {
   format: 'ripples.export';
   exportVersion: 1;
@@ -51,9 +64,7 @@ export type ExportSnapshot = {
   timeZone: string;
   boards: ExportBoard[];
   checkIns: ExportCheckIn[];
-  // reminders arrive with the reminders stage; the key is stable now so
-  // version 1 files stay forward-readable
-  reminders: never[];
+  reminders: ExportReminder[];
   settings: { metricsEducationDismissed: string[] };
 };
 
@@ -76,6 +87,7 @@ export function getExportSnapshot(
         const boards = [...(await listActiveBoards(tx)), ...(await listArchivedBoards(tx))];
         const exportBoards: ExportBoard[] = [];
         const exportCheckIns: ExportCheckIn[] = [];
+        const exportReminders: ExportReminder[] = [];
         for (const board of boards) {
           const periods = await listBoardPeriods(tx, board.id);
           exportBoards.push({
@@ -98,6 +110,17 @@ export function getExportSnapshot(
               endDate: period.endDate,
             })),
           });
+          for (const reminder of await listBoardReminders(tx, board.id)) {
+            exportReminders.push({
+              id: reminder.id,
+              boardId: reminder.boardId,
+              weekdaysMask: reminder.weekdaysMask,
+              minuteOfDay: reminder.minuteOfDay,
+              message: reminder.message,
+              enabled: reminder.enabled,
+              createdAtUtc: reminder.createdAt,
+            });
+          }
           const checkIns = await listBoardCheckIns(tx, board.id);
           for (const checkIn of checkIns) {
             exportCheckIns.push({
@@ -126,7 +149,7 @@ export function getExportSnapshot(
           timeZone: deps.clock.timeZoneId(),
           boards: exportBoards,
           checkIns: exportCheckIns,
-          reminders: [] as never[],
+          reminders: exportReminders,
           settings: {
             // bootstrap seeds the settings row, so it always exists here
             metricsEducationDismissed: (settings as NonNullable<typeof settings>)

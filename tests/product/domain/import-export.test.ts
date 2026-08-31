@@ -1,4 +1,8 @@
 import { archiveBoard, createCheckIn, deleteBoard, importSnapshot } from '@/core/domain/commands';
+import { createReminder } from '@/core/domain/reminder-commands';
+import { listBoardReminders } from '@/core/domain/queries';
+
+import { FakeReminderScheduler } from '../helpers/fake-scheduler';
 import type { LogicalDate } from '@/core/domain/ids';
 import { getBoardSummary, getGroupedCheckInHistory, listActiveBoards, listArchivedBoards } from '@/core/domain/queries';
 import {
@@ -200,6 +204,7 @@ describe('ripples csv import', () => {
       commandId: harness.ids.nextCommandId(),
       draft: {
         source: 'ripples-csv',
+        reminders: [],
         boards: [
           {
             sourceId: 'B1',
@@ -313,6 +318,21 @@ describe('own export round trip', () => {
         throw new Error(created.error.message);
       }
     }
+    const reminderScheduler = new FakeReminderScheduler();
+    const reminderResult = await createReminder(
+      { ...source.deps, scheduler: reminderScheduler },
+      {
+        commandId: source.ids.nextCommandId(),
+        boardId,
+        weekdaysMask: 0b0010001,
+        minuteOfDay: 540,
+        message: 'lace up',
+        enabled: true,
+      },
+    );
+    if (!reminderResult.ok) {
+      throw new Error(reminderResult.error.message);
+    }
     await archiveBoard(source.deps, { commandId: source.ids.nextCommandId(), boardId });
 
     const snapshot = await getExportSnapshot(source.deps, META);
@@ -323,6 +343,18 @@ describe('own export round trip', () => {
     expect(snapshot.value.boards).toHaveLength(1);
     expect(snapshot.value.checkIns).toHaveLength(3);
     expect(snapshot.value.boards[0].periods.length).toBeGreaterThanOrEqual(1);
+    // reminder rules and enabled state travel; native state stays behind
+    expect(snapshot.value.reminders).toEqual([
+      {
+        id: reminderResult.value.reminderId,
+        boardId,
+        weekdaysMask: 0b0010001,
+        minuteOfDay: 540,
+        message: 'lace up',
+        enabled: true,
+        createdAtUtc: expect.any(Number),
+      },
+    ]);
 
     const serialized = serializeExport(snapshot.value);
 
@@ -372,6 +404,16 @@ describe('own export round trip', () => {
     }
     expect(imported.value.boardsCreated).toBe(1);
     expect(imported.value.checkInsCreated).toBe(3);
+    expect(imported.value.remindersCreated).toBe(1);
+
+    const restoredReminders = await listBoardReminders(target.deps, boardId);
+    if (!restoredReminders.ok) {
+      throw new Error('reminders query failed');
+    }
+    expect(restoredReminders.value[0].id).toBe(reminderResult.value.reminderId);
+    expect(restoredReminders.value[0].enabled).toBe(true);
+    // the schedule itself is rebuilt by the reconciler, never imported
+    expect(restoredReminders.value[0].scheduleState).toBe('idle');
 
     const restored = await listArchivedBoards(target.deps);
     if (!restored.ok) {
@@ -398,6 +440,7 @@ describe('own export round trip', () => {
     }
     expect(again.value.boardsCreated).toBe(0);
     expect(again.value.checkInsCreated).toBe(0);
+    expect(again.value.remindersSkipped).toBe(1);
     await source.db.closeAsync();
     await target.db.closeAsync();
   });
@@ -534,6 +577,7 @@ describe('parser and command edge coverage', () => {
       commandId: harness.ids.nextCommandId(),
       draft: {
         source: 'own',
+        reminders: [],
         boards: [
           {
             sourceId: 'not-a-uuid',
@@ -655,6 +699,7 @@ describe('parser and command edge coverage', () => {
       commandId: harness.ids.nextCommandId(),
       draft: {
         source: 'own',
+        reminders: [],
         boards: [
           {
             sourceId: '00000000-0000-4000-8000-0000000000f1',
@@ -806,6 +851,7 @@ describe('import hardening', () => {
       commandId: harness.ids.nextCommandId(),
       draft: {
         source: 'own',
+        reminders: [],
         boards: [boardDraft({ sourceId: boardId, title: 'doomed board' })],
         checkIns: [
           checkInDraft({ sourceId: created.value.checkInId, sourceBoardId: boardId }),
@@ -834,6 +880,7 @@ describe('import hardening', () => {
       commandId: harness.ids.nextCommandId(),
       draft: {
         source: 'own',
+        reminders: [],
         boards: [
           boardDraft({
             sourceId: '00000000-0000-4000-8000-0000000000b1',
@@ -920,6 +967,7 @@ describe('import hardening', () => {
       commandId: harness.ids.nextCommandId(),
       draft: {
         source: 'own',
+        reminders: [],
         boards: [
           boardDraft({
             sourceId: '00000000-0000-4000-8000-0000000000c1',
@@ -985,6 +1033,7 @@ describe('import hardening', () => {
       commandId: harness.ids.nextCommandId(),
       draft: {
         source: 'own',
+        reminders: [],
         boards: [
           boardDraft({ sourceId: '00000000-0000-4000-8000-0000000000d8', title: 'dateless' }),
         ],
@@ -1013,6 +1062,7 @@ describe('import hardening', () => {
       commandId: harness.ids.nextCommandId(),
       draft: {
         source: 'own',
+        reminders: [],
         boards: [
           boardDraft({
             sourceId: '00000000-0000-4000-8000-0000000000d1',
@@ -1050,6 +1100,7 @@ describe('import hardening', () => {
       commandId: harness.ids.nextCommandId(),
       draft: {
         source: 'own',
+        reminders: [],
         boards: [
           boardDraft({
             sourceId: '00000000-0000-4000-8000-0000000000e1',
@@ -1084,5 +1135,136 @@ describe('import hardening', () => {
       'generated key',
     ]);
     await harness.db.closeAsync();
+  });
+});
+
+describe('reminder import edges', () => {
+  it('skips reminders with unknown boards or invalid rules', async () => {
+    const harness = await createTestHarness();
+    const result = await importSnapshot(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      draft: {
+        source: 'own',
+        boards: [
+          {
+            sourceId: '00000000-0000-4000-8000-0000000000a1',
+            title: 'with reminders',
+            symbol: 'star.fill',
+            accentHex: '#78D98B',
+            usesTintedBackground: true,
+            tracksAmount: false,
+            amountUnit: null,
+            quickAmount: 1,
+            tracksTime: false,
+            startOfDayMinute: 0,
+            metricsEnabled: true,
+            createdAtUtc: Date.UTC(2026, 7, 1, 12),
+            archivedAtUtc: null,
+            preserveId: true,
+            periods: null,
+            orderKey: null,
+          },
+        ],
+        checkIns: [],
+        reminders: [
+          {
+            sourceId: '00000000-0000-4000-8000-0000000000b1',
+            sourceBoardId: 'missing-board',
+            weekdaysMask: 1,
+            minuteOfDay: 480,
+            message: null,
+            enabled: true,
+            createdAtUtc: 0,
+          },
+          {
+            sourceId: '00000000-0000-4000-8000-0000000000b2',
+            sourceBoardId: '00000000-0000-4000-8000-0000000000a1',
+            weekdaysMask: 0,
+            minuteOfDay: 480,
+            message: null,
+            enabled: true,
+            createdAtUtc: 0,
+          },
+          {
+            sourceId: 'not-a-uuid',
+            sourceBoardId: '00000000-0000-4000-8000-0000000000a1',
+            weekdaysMask: 1,
+            minuteOfDay: 480,
+            message: null,
+            enabled: true,
+            createdAtUtc: 0,
+          },
+          {
+            sourceId: '00000000-0000-4000-8000-0000000000b3',
+            sourceBoardId: '00000000-0000-4000-8000-0000000000a1',
+            weekdaysMask: 0b0000011,
+            minuteOfDay: 600,
+            message: 'kept',
+            enabled: false,
+            createdAtUtc: Date.UTC(2026, 7, 2),
+          },
+        ],
+      },
+    });
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(result.value.remindersCreated).toBe(1);
+    expect(result.value.remindersSkipped).toBe(3);
+    await harness.db.closeAsync();
+  });
+
+  it('parses reminder records from own exports fail-soft', () => {
+    const parsed = parseOwnExport(
+      JSON.stringify({
+        format: 'ripples.export',
+        exportVersion: 1,
+        boards: [],
+        checkIns: [],
+        reminders: [
+          null,
+          {},
+          { id: 'x', boardId: 'y', weekdaysMask: 'seven', minuteOfDay: 480 },
+          {
+            id: '00000000-0000-4000-8000-0000000000c1',
+            boardId: '00000000-0000-4000-8000-0000000000c2',
+            weekdaysMask: 3,
+            minuteOfDay: 610,
+            message: 'go',
+            enabled: true,
+            createdAtUtc: 5,
+          },
+          {
+            id: '00000000-0000-4000-8000-0000000000c3',
+            boardId: '00000000-0000-4000-8000-0000000000c2',
+            weekdaysMask: 1,
+            minuteOfDay: 60,
+          },
+        ],
+      }),
+    );
+    if (!parsed.ok) {
+      throw new Error(parsed.error.message);
+    }
+    expect(parsed.value.reminders).toEqual([
+      {
+        sourceId: '00000000-0000-4000-8000-0000000000c1',
+        sourceBoardId: '00000000-0000-4000-8000-0000000000c2',
+        weekdaysMask: 3,
+        minuteOfDay: 610,
+        message: 'go',
+        enabled: true,
+        createdAtUtc: 5,
+      },
+      {
+        sourceId: '00000000-0000-4000-8000-0000000000c3',
+        sourceBoardId: '00000000-0000-4000-8000-0000000000c2',
+        weekdaysMask: 1,
+        minuteOfDay: 60,
+        message: null,
+        enabled: false,
+        createdAtUtc: 0,
+      },
+    ]);
   });
 });

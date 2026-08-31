@@ -39,10 +39,23 @@ export type ImportCheckInDraft = {
   preserveId: boolean;
 };
 
+// reminders only travel in own exports, so a restore always preserves
+// their original ids
+export type ImportReminderDraft = {
+  sourceId: string;
+  sourceBoardId: string;
+  weekdaysMask: number;
+  minuteOfDay: number;
+  message: string | null;
+  enabled: boolean;
+  createdAtUtc: number;
+};
+
 export type ImportDraft = {
   source: 'own' | 'ripples-csv';
   boards: ImportBoardDraft[];
   checkIns: ImportCheckInDraft[];
+  reminders: ImportReminderDraft[];
 };
 
 const RIPPLES_DEFAULT_SYMBOL = boardSymbolAllowlist[1];
@@ -149,7 +162,37 @@ export function parseOwnExport(json: string): DomainResult<ImportDraft> {
       preserveId: true,
     });
   }
-  return ok({ source: 'own', boards: boardDrafts, checkIns: checkInDrafts });
+  const reminders = Array.isArray(data.reminders) ? data.reminders : [];
+  const reminderDrafts: ImportReminderDraft[] = [];
+  for (const entry of reminders) {
+    if (typeof entry !== 'object' || entry === null) {
+      continue;
+    }
+    const reminder = entry as Record<string, unknown>;
+    if (
+      typeof reminder.id !== 'string' ||
+      typeof reminder.boardId !== 'string' ||
+      typeof reminder.weekdaysMask !== 'number' ||
+      typeof reminder.minuteOfDay !== 'number'
+    ) {
+      continue;
+    }
+    reminderDrafts.push({
+      sourceId: reminder.id,
+      sourceBoardId: reminder.boardId,
+      weekdaysMask: reminder.weekdaysMask,
+      minuteOfDay: reminder.minuteOfDay,
+      message: typeof reminder.message === 'string' ? reminder.message : null,
+      enabled: reminder.enabled === true,
+      createdAtUtc: typeof reminder.createdAtUtc === 'number' ? reminder.createdAtUtc : 0,
+    });
+  }
+  return ok({
+    source: 'own',
+    boards: boardDrafts,
+    checkIns: checkInDrafts,
+    reminders: reminderDrafts,
+  });
 }
 
 // --- ripples csv ----------------------------------------------------------
@@ -339,5 +382,5 @@ export function parseRipplesCsv(text: string): DomainResult<ImportDraft> {
   if (boards.length === 0) {
     return err('validation', 'This file has no boards to import.');
   }
-  return ok({ source: 'ripples-csv', boards, checkIns });
+  return ok({ source: 'ripples-csv', boards, checkIns, reminders: [] });
 }

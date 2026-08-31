@@ -15,7 +15,6 @@ import type { CommandDeps } from './commands';
 import { runCommand } from './commands';
 import type { Reminder, ReminderScheduleState } from './entities';
 import type { BoardId, CommandId, ReminderId } from './ids';
-import { isUuidV4 } from './ids';
 import type { ReminderScheduler } from './ports';
 import type { DomainResult } from './result';
 import { err, ok } from './result';

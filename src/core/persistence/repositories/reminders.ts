@@ -81,6 +81,15 @@ export async function updateReminderRow(tx: SqlExecutor, reminder: Reminder): Pr
   );
 }
 
+// import restores must see tombstoned rows too: inserting over a deleted
+// id would violate the primary key and roll back the whole restore
+export async function reminderIdExists(tx: SqlExecutor, reminderId: ReminderId): Promise<boolean> {
+  const row = await tx.getFirstAsync<{ id: string }>(`SELECT id FROM reminders WHERE id = ?`, [
+    reminderId,
+  ]);
+  return row !== null && row !== undefined;
+}
+
 export async function getReminderById(
   tx: SqlExecutor,
   reminderId: ReminderId,

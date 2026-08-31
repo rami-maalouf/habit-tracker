@@ -20,6 +20,7 @@ import {
   insertCheckIn,
   updateCheckInRow,
 } from '../persistence/repositories/check-ins';
+import { insertReminder, reminderIdExists } from '../persistence/repositories/reminders';
 import {
   appendOutbox,
   closeOpenPeriod,
@@ -36,8 +37,8 @@ import {
 } from '../persistence/repositories/support';
 import type { HlcState } from '../sync/hybrid-clock';
 import { advance, encodeStamp } from '../sync/hybrid-clock';
-import type { Board, CheckIn, CheckInSource, SelectedIcon } from './entities';
-import type { BoardId, CheckInId, CommandId, LogicalDate } from './ids';
+import type { Board, CheckIn, CheckInSource, Reminder, SelectedIcon } from './entities';
+import type { BoardId, CheckInId, CommandId, LogicalDate, ReminderId } from './ids';
 import { isUuidV4 } from './ids';
 import { orderKeyAfter, orderKeyBetween } from './order-key';
 import type { Clock, IdGenerator } from './ports';
@@ -47,11 +48,14 @@ import {
   validateAccentHex,
   validateAmount,
   validateLogicalDateInput,
+  validateMinuteOfDay,
   validateNote,
+  validateReminderMessage,
   validateStartOfDayMinute,
   validateSymbol,
   validateTitle,
   validateUnit,
+  validateWeekdaysMask,
 } from './validation';
 
 export type CommandDeps = {
@@ -682,6 +686,8 @@ export type ImportSummary = {
   boardsSkipped: number;
   checkInsCreated: number;
   checkInsSkipped: number;
+  remindersCreated: number;
+  remindersSkipped: number;
 };
 
 // restored activity periods replay only when the whole list is coherent:
@@ -740,6 +746,8 @@ export function importSnapshot(
       boardsSkipped: 0,
       checkInsCreated: 0,
       checkInsSkipped: 0,
+      remindersCreated: 0,
+      remindersSkipped: 0,
     };
     const boardIdBySource = new Map<string, BoardId>();
     const boardMeta = new Map<
@@ -937,6 +945,50 @@ export function importSnapshot(
       await insertCheckIn(tx, checkIn);
       await appendOutbox(tx, 'check_in', checkInId, mutationStamp, now);
       summary.checkInsCreated += 1;
+    }
+
+    for (const draft of input.draft.reminders) {
+      const boardId = boardIdBySource.get(draft.sourceBoardId);
+      if (!boardId) {
+        summary.remindersSkipped += 1;
+        continue;
+      }
+      const mask = validateWeekdaysMask(draft.weekdaysMask);
+      const minute = validateMinuteOfDay(draft.minuteOfDay);
+      const message = validateReminderMessage(draft.message);
+      if (!mask.ok || !minute.ok || !message.ok) {
+        summary.remindersSkipped += 1;
+        continue;
+      }
+      if (!isUuidV4(draft.sourceId)) {
+        summary.remindersSkipped += 1;
+        continue;
+      }
+      // the raw check covers live and tombstoned rows
+      if (await reminderIdExists(tx, draft.sourceId as ReminderId)) {
+        summary.remindersSkipped += 1;
+        continue;
+      }
+      const mutationStamp = stamp();
+      const reminder: Reminder = {
+        id: draft.sourceId as ReminderId,
+        boardId,
+        weekdaysMask: mask.value,
+        minuteOfDay: minute.value,
+        message: message.value,
+        // rules and enabled state restore; the schedule itself is rebuilt
+        // by the reminder reconciler after the import
+        enabled: draft.enabled,
+        scheduleState: 'idle',
+        lastScheduleError: null,
+        createdAt: Math.min(draft.createdAtUtc, now),
+        updatedAt: now,
+        mutationStamp,
+        deletedAt: null,
+      };
+      await insertReminder(tx, reminder);
+      await appendOutbox(tx, 'reminder', reminder.id, mutationStamp, now);
+      summary.remindersCreated += 1;
     }
 
     await rebuildWidgetRows(tx, now, timeZoneId);
