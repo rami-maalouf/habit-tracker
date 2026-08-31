@@ -74,6 +74,21 @@ export function SettingsScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: semanticColor('groupedBackground', scheme) }}>
       <Stack.Screen options={{ title: 'Settings' }} />
+      {/* feedback stays above the scroll content: a notice rendered after
+          the groups would sit below the fold and a tap near the top would
+          appear to do nothing */}
+      {linkNotice ? (
+        <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
+          <AppText variant="footnote" testID="settings-link-notice">
+            {linkNotice}
+          </AppText>
+        </View>
+      ) : null}
+      {exportError ? (
+        <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
+          <InlineError message={exportError} testID="settings-export-error" />
+        </View>
+      ) : null}
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg }}
@@ -167,12 +182,6 @@ export function SettingsScreen() {
           />
         </SettingsGroup>
 
-        {linkNotice ? (
-          <AppText variant="footnote" testID="settings-link-notice">
-            {linkNotice}
-          </AppText>
-        ) : null}
-        {exportError ? <InlineError message={exportError} testID="settings-export-error" /> : null}
       </ScrollView>
     </View>
   );

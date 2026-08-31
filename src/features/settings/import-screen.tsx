@@ -20,6 +20,10 @@ type ImportState =
   | { step: 'importing'; fileName: string; draft: ImportDraft }
   | { step: 'done'; fileName: string; summary: ImportSummary };
 
+function count(value: number, noun: string): string {
+  return `${value} ${noun}${value === 1 ? '' : 's'}`;
+}
+
 // two import sources: a ripples csv export from the original app, and this
 // app's own json export (a restore that skips records it already has)
 export function ImportScreen() {
@@ -112,7 +116,7 @@ export function ImportScreen() {
           >
             <AppText variant="headline">{state.fileName}</AppText>
             <AppText testID="import-preview-counts">
-              {`${state.draft.boards.length} ${state.draft.boards.length === 1 ? 'board' : 'boards'}, ${state.draft.checkIns.length} check-ins.`}
+              {`${count(state.draft.boards.length, 'board')}, ${count(state.draft.checkIns.length, 'check-in')}.`}
             </AppText>
             <AppText variant="footnote">
               {state.draft.source === 'ripples-csv'
@@ -141,9 +145,9 @@ export function ImportScreen() {
           >
             <AppText variant="headline">Import complete</AppText>
             <AppText testID="import-summary">
-              {`Added ${state.summary.boardsCreated} ${state.summary.boardsCreated === 1 ? 'board' : 'boards'} and ${state.summary.checkInsCreated} check-ins.${
+              {`Added ${count(state.summary.boardsCreated, 'board')} and ${count(state.summary.checkInsCreated, 'check-in')}.${
                 state.summary.boardsSkipped + state.summary.checkInsSkipped > 0
-                  ? ` Skipped ${state.summary.boardsSkipped} boards and ${state.summary.checkInsSkipped} check-ins that already existed or were invalid.`
+                  ? ` Skipped ${count(state.summary.boardsSkipped, 'board')} and ${count(state.summary.checkInsSkipped, 'check-in')} that already existed or were invalid.`
                   : ''
               }`}
             </AppText>

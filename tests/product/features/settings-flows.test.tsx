@@ -233,7 +233,7 @@ describe('import flow', () => {
     await press('import-confirm');
     await settle();
     expect(await screen.findByTestId('import-summary')).toHaveTextContent(
-      'Added 1 board and 1 check-ins.',
+      'Added 1 board and 1 check-in.',
     );
 
     // restoring the same file again skips everything
@@ -242,7 +242,7 @@ describe('import flow', () => {
     await press('import-own');
     await press('import-confirm');
     await settle();
-    expect(await screen.findByTestId('import-summary')).toHaveTextContent(/Skipped 1 boards/);
+    expect(await screen.findByTestId('import-summary')).toHaveTextContent(/Skipped 1 board and 1 check-in that already existed/);
   });
 });
 
