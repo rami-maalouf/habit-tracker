@@ -19,6 +19,7 @@ export default function RootLayout() {
     <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
       <ProductProvider>
         <Stack>
+          <Stack.Screen name="boards/[boardId]/index" options={sheet} />
           <Stack.Screen name="boards/new" options={sheet} />
           <Stack.Screen name="boards/[boardId]/edit" options={sheet} />
           <Stack.Screen name="boards/[boardId]/options" options={sheet} />
