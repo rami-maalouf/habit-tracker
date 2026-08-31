@@ -15,6 +15,9 @@ type HeatmapViewProps = {
   testID?: string;
 };
 
+// github-style grid: every day in the window renders a visible cell whose
+// color deepens with the check-in count; days outside the board's activity
+// periods stay a fainter gray so archived gaps read unavailable, not missed
 function cellColor(intensity: string, eligible: boolean, colors: DerivedBoardColors): string {
   switch (intensity) {
     case 'low':
@@ -24,7 +27,7 @@ function cellColor(intensity: string, eligible: boolean, colors: DerivedBoardCol
     case 'high':
       return colors.accent;
     default:
-      return eligible ? colors.inactiveBar : 'transparent';
+      return eligible ? colors.inactiveBar : colors.unavailableCell;
   }
 }
 

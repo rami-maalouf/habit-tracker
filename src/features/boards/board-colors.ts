@@ -8,6 +8,8 @@ export type DerivedBoardColors = {
   tintedCardBackground: string;
   // strip bar for inactive days
   inactiveBar: string;
+  // fainter cell for days outside the board's activity periods
+  unavailableCell: string;
 };
 
 export function parseHexColor(hex: string): { r: number; g: number; b: number } {
@@ -55,5 +57,6 @@ export function deriveBoardColors(
     onAccent: readableOn(accentHex),
     tintedCardBackground: withAlpha(accentHex, scheme === 'dark' ? 0.18 : 0.14),
     inactiveBar: scheme === 'dark' ? 'rgba(120, 120, 128, 0.28)' : 'rgba(120, 120, 128, 0.2)',
+    unavailableCell: scheme === 'dark' ? 'rgba(120, 120, 128, 0.14)' : 'rgba(120, 120, 128, 0.1)',
   };
 }
