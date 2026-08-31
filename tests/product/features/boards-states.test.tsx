@@ -220,7 +220,7 @@ describe('amount and time boards through the ui', () => {
     fireEvent.changeText(screen.getByTestId('check-in-amount'), '7.5');
     await press('check-in-save');
     await settle();
-    expect(await screen.findByText('Aug 29')).toBeOnTheScreen();
-    expect(screen.getByText('7.5 km')).toBeOnTheScreen();
+    expect(await screen.findByText(/Aug 29/)).toBeOnTheScreen();
+    expect(screen.getByText(/7\.5 km/)).toBeOnTheScreen();
   });
 });

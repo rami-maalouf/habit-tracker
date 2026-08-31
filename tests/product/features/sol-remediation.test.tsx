@@ -170,7 +170,7 @@ describe('check-in time recombination', () => {
 
     // reopening the record seeds the picker from the stored instant and a
     // clean save keeps the same wall-clock time
-    fireEvent.press(screen.getByLabelText(/timed habit/));
+    fireEvent.press(screen.getByText('timed habit'));
     await settle();
     await screen.findByTestId('delete-check-in');
     await press('check-in-save');
@@ -294,12 +294,11 @@ describe('archived boards through settings', () => {
     expect(archived.ok).toBe(true);
 
     renderRouter('src/app', { initialUrl: `/boards/${boardId}/check-ins` });
-    await screen.findByText('Aug 29');
-    const row = screen.getByLabelText('closed book');
-    expect(row.props.accessibilityState?.disabled).toBe(true);
-    fireEvent.press(row);
+    await screen.findByText(/Aug 29/);
+    // read-only rows carry no swipe delete and no tap-to-edit
+    expect(screen.queryByTestId('swipe-delete-0')).toBeNull();
+    fireEvent.press(screen.getByText('closed book'));
     await settle();
-    // the row does not open the editable form
     expect(screen.queryByTestId('check-in-note')).toBeNull();
   });
 });
@@ -522,7 +521,7 @@ describe('self-review fixes', () => {
     }
 
     renderRouter('src/app', { initialUrl: `/boards/${boardId}/check-ins` });
-    fireEvent.press(await screen.findByLabelText(/conflict habit/));
+    fireEvent.press(await screen.findByText('conflict habit ✎'));
     await settle();
     await screen.findByTestId('check-in-note');
 
@@ -597,27 +596,19 @@ describe('history paging', () => {
 
     const querySpy = jest.spyOn(queriesModule, 'getGroupedCheckInHistory');
     renderRouter('src/app', { initialUrl: `/boards/${boardId}/check-ins` });
-    await screen.findByText('Aug 29');
-    // list virtualization keeps far rows unmounted, so paging is asserted
-    // through the section data the list receives
-    const { SectionList } = jest.requireActual<typeof import('react-native')>('react-native');
-    const sectionsOf = () =>
-      (screen.UNSAFE_getByType(SectionList).props.sections as { title: string }[]).map(
-        (section) => section.title,
-      );
-    expect(sectionsOf()).toEqual(['Aug 29']);
+    await screen.findByText(/Aug 29/);
+    expect(screen.queryByText(/Aug 28/)).toBeNull();
 
     // the trimmed page loaded under the limit, but older rows remain, so
-    // the end-reach still grows the page
-    fireEvent(screen.getByTestId('history-list'), 'endReached');
-    await settle();
-    expect(sectionsOf()).toEqual(['Aug 29', 'Aug 28']);
+    // the native list offers load more and it grows the page
+    await press('history-load-more');
+    expect(await screen.findByText(/Aug 28/)).toBeOnTheScreen();
 
-    // with everything loaded, a further end-reach issues no new query
+    // with everything loaded, the load-more affordance disappears and no
+    // further query is issued
     const callsWhenExhausted = querySpy.mock.calls.length;
-    fireEvent(screen.getByTestId('history-list'), 'endReached');
+    expect(screen.queryByTestId('history-load-more')).toBeNull();
     await settle();
-    expect(sectionsOf()).toEqual(['Aug 29', 'Aug 28']);
     expect(querySpy.mock.calls.length).toBe(callsWhenExhausted);
     querySpy.mockRestore();
   });
@@ -810,7 +801,7 @@ describe('round five: dst gaps and zone-stable edits', () => {
     // or rewrite the occurrence instant, zone, or offset
     mockClock.zone = 'Pacific/Kiritimati';
     renderRouter('src/app', { initialUrl: `/boards/${boardId}/check-ins` });
-    fireEvent.press(await screen.findByLabelText(/traveler/));
+    fireEvent.press(await screen.findByText('traveler'));
     await settle();
     const note = await screen.findByTestId('check-in-note');
     fireEvent.changeText(note, 'same moment, new zone');

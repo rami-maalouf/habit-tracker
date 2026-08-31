@@ -118,8 +118,8 @@ describe('boards vertical slice', () => {
     await settle();
 
     // back on history with one row for today
-    expect(await screen.findByText('Aug 30')).toBeOnTheScreen();
-    fireEvent.press(screen.getByLabelText('journal habit, note'));
+    expect(await screen.findByText(/Aug 30/)).toBeOnTheScreen();
+    fireEvent.press(screen.getByText('journal habit ✎'));
     await settle();
 
     const editNote = await screen.findByTestId('check-in-note');
@@ -127,12 +127,10 @@ describe('boards vertical slice', () => {
     fireEvent.changeText(editNote, 'kept it twice');
     await press('check-in-save');
     await settle();
-    expect(await screen.findByText('Aug 30')).toBeOnTheScreen();
+    expect(await screen.findByText(/Aug 30/)).toBeOnTheScreen();
 
-    // delete the record through the edit sheet
-    fireEvent.press(screen.getByLabelText('journal habit, note'));
-    await settle();
-    await press('delete-check-in');
+    // delete the record through the native swipe action
+    await press('swipe-delete-0');
     await settle();
     expect(await screen.findByTestId('history-empty')).toBeOnTheScreen();
   });

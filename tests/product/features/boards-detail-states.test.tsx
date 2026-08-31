@@ -465,14 +465,12 @@ describe('history and check-in edge states', () => {
     }
 
     renderRouter('src/app', { initialUrl: `/boards/${boardId}/check-ins` });
-    // one month header, two day sections, rows without time/amount/note detail
-    expect(await screen.findByText('August')).toBeOnTheScreen();
-    expect(screen.getAllByText('August')).toHaveLength(1);
-    expect(screen.getByText('Aug 29')).toBeOnTheScreen();
-    expect(screen.getByText('Aug 30')).toBeOnTheScreen();
+    // one month header on its first day section, plain rows across days
+    expect(await screen.findByText(/August · Aug 30/)).toBeOnTheScreen();
+    expect(screen.getByText(/Aug 29 · 1/)).toBeOnTheScreen();
     // a month outside the current year keeps its year in the header
-    expect(screen.getByText('December 2025')).toBeOnTheScreen();
-    expect(screen.getAllByLabelText('bare rows')).toHaveLength(3);
+    expect(screen.getByText(/December 2025/)).toBeOnTheScreen();
+    expect(screen.getAllByText('bare rows')).toHaveLength(3);
   });
 
   it('labels consistency bands from the completion rate', async () => {

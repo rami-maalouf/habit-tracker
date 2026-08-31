@@ -160,7 +160,7 @@ describe('query error surfaces', () => {
     expect(enabled.ok).toBe(true);
 
     renderRouter('src/app', { initialUrl: `/boards/${boardId}/check-ins` });
-    fireEvent.press(await screen.findByLabelText(/later timed/));
+    fireEvent.press(await screen.findByText('later timed'));
     await settle();
     await screen.findByTestId('delete-check-in');
     // a clean save neither invents a time nor rewrites the record
