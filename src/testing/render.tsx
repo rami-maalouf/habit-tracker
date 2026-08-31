@@ -12,11 +12,18 @@ configure({ defaultIncludeHiddenElements: true });
 export { fireEvent, renderRouter, screen } from 'expo-router/testing-library';
 
 // renderRouter runs under fake timers; async command -> invalidate -> requery
-// chains need explicit act flushes between macro- and microtasks
+// chains need explicit act flushes between macro- and microtasks.
+// timer advancement gets its own awaited act: a timer that starts async work
+// (a retry, a refresh) would otherwise open a nested act scope inside this
+// one and react warns about the interleaving.
 export async function settle(): Promise<void> {
   await act(async () => {
     await Promise.resolve();
+  });
+  await act(async () => {
     jest.advanceTimersByTime(60);
+  });
+  await act(async () => {
     await Promise.resolve();
     await Promise.resolve();
   });

@@ -438,11 +438,15 @@ describe('icloud sync settings', () => {
       'SELECT retry_state FROM sync_state WHERE id = 1',
     );
     expect(before?.retry_state).toContain('attempt');
+    // the retry's own async work has to settle inside this act, or its
+    // trailing state updates land outside any act scope
     await act(async () => {
       jest.advanceTimersByTime(400_000);
       await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
     });
-    await settle();
     const after = await opened.value.db.getFirstAsync<{ retry_state: string | null }>(
       'SELECT retry_state FROM sync_state WHERE id = 1',
     );
@@ -458,12 +462,43 @@ describe('icloud sync settings', () => {
     await act(async () => {
       jest.advanceTimersByTime(900_000);
       await Promise.resolve();
+      await Promise.resolve();
     });
-    await settle();
     const idle = await opened.value.db.getFirstAsync<{ retry_state: string | null }>(
       'SELECT retry_state FROM sync_state WHERE id = 1',
     );
     expect(idle?.retry_state).toBe(stopped?.retry_state);
+    expect(screen.getByTestId('icloud-status')).toHaveTextContent(/Off/);
+  });
+
+  it('drops the outcome of a pass that was in flight when sync was turned off', async () => {
+    const opened = await getProductCore();
+    if (!opened.ok) {
+      throw new Error('core failed');
+    }
+    renderRouter('src/app', { initialUrl: '/settings/sync' });
+    await screen.findByTestId('icloud-toggle');
+    alertSpy.mockImplementationOnce((_title, _message, buttons) => {
+      buttons?.find((button) => button.text === 'Turn On')?.onPress?.();
+    });
+    fireEvent(screen.getByTestId('icloud-toggle'), 'valueChange', true);
+    await settle();
+    await settle();
+    expect(screen.getByTestId('icloud-status')).toHaveTextContent(/Needs Attention/);
+
+    // start a pass and turn sync off before letting it settle: the pass is
+    // genuinely in flight, and its outcome must never reach the screen
+    fireEvent.press(screen.getByTestId('icloud-sync-now'));
+    fireEvent(screen.getByTestId('icloud-toggle'), 'valueChange', false);
+    await settle();
+    await settle();
+    expect(screen.getByTestId('icloud-status')).toHaveTextContent(/Off/);
+    // and no retry was armed by the dropped pass
+    await act(async () => {
+      jest.advanceTimersByTime(900_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
     expect(screen.getByTestId('icloud-status')).toHaveTextContent(/Off/);
   });
 

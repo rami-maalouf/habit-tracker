@@ -66,9 +66,9 @@ describe('android readiness', () => {
     const offenders: string[] = [];
     for (const file of walk(SRC_ROOT)) {
       const relative = file.split('/src/')[1];
-      // platform extensions are resolved per platform, and the widget
-      // layout is only ever compiled into the ios extension target
-      if (/\.(ios|android)\.tsx?$/.test(relative) || relative.includes('testing/')) {
+      // only .ios files are skipped: android resolves .android files and
+      // the generic ones, so both have to stay clean
+      if (/\.ios\.tsx?$/.test(relative) || relative.includes('testing/')) {
         continue;
       }
       if (relative === 'platform/widgets/ripples-boards-widget.tsx') {
