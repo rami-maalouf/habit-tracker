@@ -28,6 +28,13 @@ jobs:
     if: github.event.label.name == 'repro'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        # `eas workflow:run` reads .eas/workflows/agent-fix.yml relative to
+        # the current directory and refuses to run outside a project dir
+        # ("Run this command inside a project directory.") - confirmed by a
+        # live test run failing without this step. It doesn't need
+        # node_modules (app.json is static, no app.config.ts to evaluate),
+        # just the checked-out files.
       - name: Acknowledge on the issue
         env:
           GH_TOKEN: ${{ github.token }}
