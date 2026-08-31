@@ -15,7 +15,9 @@
         "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
-        "com.apple.security.application-groups": ["group.com.ramimaalouf.habittracker"]
+        "com.apple.security.application-groups": [
+          "group.com.ramimaalouf.habittracker"
+        ]
       }
     },
     "android": {
@@ -64,7 +66,8 @@
             }
           ]
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true

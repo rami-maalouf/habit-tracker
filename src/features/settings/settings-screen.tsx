@@ -1,5 +1,6 @@
 import { Stack, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
+import * as WebBrowser from 'expo-web-browser';
 import { Alert, Linking, ScrollView, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
@@ -32,7 +33,11 @@ export function SettingsScreen() {
       return;
     }
     setLinkNotice(null);
-    void Linking.openURL(url).catch(() => {
+    // support and legal destinations open in the in-app browser so the
+    // person never loses their place; a store or mail scheme has to leave
+    const inApp = url.startsWith('https://') && key !== 'appStoreReview';
+    const open = inApp ? WebBrowser.openBrowserAsync(url) : Linking.openURL(url);
+    void open.catch(() => {
       setLinkNotice(`${title} could not be opened. Try again.`);
     });
   }, []);

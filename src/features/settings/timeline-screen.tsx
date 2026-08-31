@@ -15,6 +15,9 @@ const RELEASES = [
       'Check-in history with paging and a journal',
       'Analytics with timeline, weekdays, comparison, consistency, and streaks',
       'Offline export plus import from Ripples CSV and app backups',
+      'Per-board reminders with weekday and time selection',
+      'Home Screen widgets in every size, reading the shared database',
+      'iCloud sync groundwork with a queue you can watch',
     ],
   },
 ];
