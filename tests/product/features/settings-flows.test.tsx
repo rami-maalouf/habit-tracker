@@ -493,13 +493,62 @@ describe('icloud sync settings', () => {
     await settle();
     await settle();
     expect(screen.getByTestId('icloud-status')).toHaveTextContent(/Off/);
-    // and no retry was armed by the dropped pass
+
+    // no retry was armed by the dropped pass: the engine's own retry
+    // counter is the proof, since a retry would advance it
+    const afterDisable = await opened.value.db.getFirstAsync<{ retry_state: string | null }>(
+      'SELECT retry_state FROM sync_state WHERE id = 1',
+    );
     await act(async () => {
       jest.advanceTimersByTime(900_000);
       await Promise.resolve();
       await Promise.resolve();
     });
+    const later = await opened.value.db.getFirstAsync<{ retry_state: string | null }>(
+      'SELECT retry_state FROM sync_state WHERE id = 1',
+    );
+    expect(later?.retry_state).toBe(afterDisable?.retry_state);
     expect(screen.getByTestId('icloud-status')).toHaveTextContent(/Off/);
+  });
+
+  it('clears the syncing label when a disable itself fails', async () => {
+    const opened = await getProductCore();
+    if (!opened.ok) {
+      throw new Error('core failed');
+    }
+    renderRouter('src/app', { initialUrl: '/settings/sync' });
+    await screen.findByTestId('icloud-toggle');
+    alertSpy.mockImplementationOnce((_title, _message, buttons) => {
+      buttons?.find((button) => button.text === 'Turn On')?.onPress?.();
+    });
+    fireEvent(screen.getByTestId('icloud-toggle'), 'valueChange', true);
+    await settle();
+    await settle();
+
+    // the disable write itself fails while a pass is running: only the
+    // write path is broken, so the screen's own reads still work
+    const db = opened.value.db;
+    const realWrite = db.withExclusiveTransactionAsync.bind(db);
+    let refused = false;
+    db.withExclusiveTransactionAsync = ((work: never) => {
+      if (!refused) {
+        refused = true;
+        return Promise.reject(new Error('write refused'));
+      }
+      return realWrite(work);
+    }) as typeof db.withExclusiveTransactionAsync;
+
+    fireEvent.press(screen.getByTestId('icloud-sync-now'));
+    fireEvent(screen.getByTestId('icloud-toggle'), 'valueChange', false);
+    await settle();
+    await settle();
+    db.withExclusiveTransactionAsync = realWrite;
+
+    // sync is still on, so the screen must offer a usable Sync Now rather
+    // than a stuck "Syncing…" label
+    expect(screen.getByTestId('icloud-error')).toBeOnTheScreen();
+    expect(screen.getByTestId('icloud-status')).not.toHaveTextContent(/Syncing/);
+    expect(screen.getByTestId('icloud-sync-now')).toBeOnTheScreen();
   });
 
   it('shows the last successful sync time once one exists', async () => {

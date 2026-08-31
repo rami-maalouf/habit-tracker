@@ -99,9 +99,11 @@ export function ICloudScreen() {
             if (!result.ok) {
               setError(result.error.message);
               // a failed disable leaves sync enabled while the pass it
-              // cancelled can no longer clear anything, so the screen has
-              // to release its own busy state or Sync Now stays unusable
+              // cancelled can no longer report anything, so the screen has
+              // to release both the busy state and the stale `syncing`
+              // label or it shows "Syncing…" next to a live Sync Now
               setBusy(false);
+              setStatus(null);
               return;
             }
             invalidate();
