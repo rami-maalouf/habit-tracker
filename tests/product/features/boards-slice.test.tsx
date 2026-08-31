@@ -96,7 +96,6 @@ describe('boards vertical slice', () => {
     await press('example-boards');
     expect(screen.getByTestId('example-boards-copy')).toBeOnTheScreen();
 
-    await press('detail-quick');
     await press('dismiss-education');
     expect(screen.queryByTestId('metrics-education')).toBeNull();
   });

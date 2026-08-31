@@ -228,21 +228,23 @@ describe('home extras', () => {
   });
 });
 
-describe('detail quick undo', () => {
+describe('detail add check-in', () => {
   beforeEach(() => {
     resetProductCoreForTests();
     alertSpy.mockClear();
   });
 
-  it('offers a five-second undo after a detail quick check-in', async () => {
-    const boardId = await seedSimpleBoard('undoable');
+  it('opens the add check-in sheet from the detail plus, defaulting to today', async () => {
+    const boardId = await seedSimpleBoard('deliberate');
     renderRouter('src/app', { initialUrl: `/boards/${boardId}` });
-    await screen.findByTestId('detail-quick');
+    await screen.findByTestId('detail-add-check-in');
 
-    await press('detail-quick');
-    expect(await screen.findByTestId('detail-undo')).toBeOnTheScreen();
-    await press('detail-undo');
-    expect(screen.queryByTestId('detail-undo')).toBeNull();
+    await press('detail-add-check-in');
+    // the sheet opens with today's date preselected and a save lands today
+    const date = await screen.findByTestId('check-in-date');
+    expect(new Date(date.props.children as string).getUTCDate()).toBe(30);
+    await press('check-in-save');
+    await settle();
 
     const deps = await core();
     const { getGroupedCheckInHistory } = jest.requireActual<
@@ -252,21 +254,7 @@ describe('detail quick undo', () => {
     if (!history.ok) {
       throw new Error('history query failed');
     }
-    expect(history.value.months).toHaveLength(0);
-  });
-
-  it('expires the detail undo window after five seconds', async () => {
-    const boardId = await seedSimpleBoard('fleeting detail');
-    renderRouter('src/app', { initialUrl: `/boards/${boardId}` });
-    await screen.findByTestId('detail-quick');
-
-    await press('detail-quick');
-    expect(await screen.findByTestId('detail-undo')).toBeOnTheScreen();
-    await act(async () => {
-      jest.advanceTimersByTime(5100);
-      await Promise.resolve();
-    });
-    expect(screen.queryByTestId('detail-undo')).toBeNull();
+    expect(history.value.months[0].days[0].date).toBe('2026-08-30');
   });
 });
 
@@ -313,17 +301,17 @@ describe('failure surfaces behind stale screens', () => {
     expect(screen.getByTestId('board-card-0')).toHaveTextContent(/alpha/);
   });
 
-  it('shows a detail action error when the board archived elsewhere', async () => {
+  it('locks the add sheet when the board archived elsewhere', async () => {
     const boardId = await seedSimpleBoard('slipping');
     renderRouter('src/app', { initialUrl: `/boards/${boardId}` });
-    await screen.findByTestId('detail-quick');
+    await screen.findByTestId('detail-add-check-in');
 
     const deps = await core();
     const archived = await archiveBoard(deps, { commandId: newCommandId(), boardId });
     expect(archived.ok).toBe(true);
 
-    await press('detail-quick');
-    expect(await screen.findByTestId('board-action-error')).toBeOnTheScreen();
+    await press('detail-add-check-in');
+    expect(await screen.findByTestId('check-in-archived-board')).toBeOnTheScreen();
   });
 
   it('recovers from history for a missing board', async () => {

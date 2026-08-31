@@ -1,17 +1,15 @@
 import { Stack, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
 import {
-  createCheckIn,
   deleteBoard,
   dismissMetricsEducation,
   restoreBoard,
-  undoCreatedCheckIn,
   updateBoard,
 } from '@/core/domain/commands';
-import type { BoardId, CheckInId, CommandId } from '@/core/domain/ids';
+import type { BoardId } from '@/core/domain/ids';
 import {
   getBoard,
   getBoardDependentCounts,
@@ -19,7 +17,6 @@ import {
   getBoardSummary,
   getMetricsEducationDismissed,
 } from '@/core/domain/queries';
-import { triggerActionHaptic } from '@/foundation/haptics';
 import { radius, radiusCurve, semanticColor, spacing } from '@/theme';
 
 import { deriveBoardColors } from './board-colors';
@@ -57,64 +54,6 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
   const dismissed = useProductQuery((c) => getMetricsEducationDismissed(c), []);
   const [examplesOpen, setExamplesOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [quickPending, setQuickPending] = useState(false);
-  const [undo, setUndo] = useState<{
-    checkInId: CheckInId;
-    createdByCommandId: CommandId;
-  } | null>(null);
-  const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (undoTimer.current) {
-        clearTimeout(undoTimer.current);
-      }
-    };
-  }, []);
-
-  const quickAdd = useCallback(async () => {
-    // a rapid double tap must not record two check-ins
-    setQuickPending(true);
-    setActionError(null);
-    const commandId = nextCommandId();
-    const result = await createCheckIn(core, {
-      commandId,
-      boardId,
-      source: 'app',
-    });
-    setQuickPending(false);
-    if (result.ok) {
-      void triggerActionHaptic();
-      invalidate();
-      if (undoTimer.current) {
-        clearTimeout(undoTimer.current);
-      }
-      setUndo({ checkInId: result.value.checkInId, createdByCommandId: commandId });
-      undoTimer.current = setTimeout(() => setUndo(null), 5000);
-    } else {
-      setActionError(result.error.message);
-    }
-  }, [boardId, core, invalidate, nextCommandId]);
-
-  const undoLast = useCallback(async () => {
-    if (!undo) {
-      return;
-    }
-    if (undoTimer.current) {
-      clearTimeout(undoTimer.current);
-    }
-    setUndo(null);
-    const result = await undoCreatedCheckIn(core, {
-      commandId: nextCommandId(),
-      checkInId: undo.checkInId,
-      createdByCommandId: undo.createdByCommandId,
-    });
-    if (result.ok) {
-      invalidate();
-    } else {
-      setActionError(result.error.message);
-    }
-  }, [core, invalidate, nextCommandId, undo]);
 
   const confirmDelete = useCallback(async () => {
     const counts = await getBoardDependentCounts(core, boardId);
@@ -402,25 +341,6 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
         {actionError ? <InlineError message={actionError} testID="board-action-error" /> : null}
       </ScrollView>
 
-      {undo ? (
-        <View
-          style={{
-            paddingHorizontal: spacing.lg,
-            paddingVertical: spacing.md,
-            backgroundColor: semanticColor('secondaryGroupedBackground', scheme),
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-          }}
-        >
-          <AppText variant="subheadline">{`Checked in to ${record.title}`}</AppText>
-          <ProductPressable onPress={undoLast} label="Undo check-in" testID="detail-undo">
-            <AppText variant="headline" selectable={false}>
-              Undo
-            </AppText>
-          </ProductPressable>
-        </View>
-      ) : null}
 
       {!archived ? (
         <View
@@ -467,10 +387,12 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
             </ProductPressable>
           </View>
           <ProductPressable
-            onPress={quickAdd}
-            disabled={quickPending}
-            label={`Check in to ${record.title}`}
-            testID="detail-quick"
+            // the reference opens the add check-in sheet: date defaults to
+            // today and any past date is selectable there
+            onPress={() => router.push(`/boards/${record.id}/check-ins/new`)}
+            label="Add check-in"
+            hint="Opens the add check-in sheet"
+            testID="detail-add-check-in"
           >
             <View
               style={{
@@ -483,7 +405,16 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
                 justifyContent: 'center',
               }}
             >
-              <AppText variant="title2" style={{ color: colors.onAccent }} selectable={false}>
+              <AppText
+                selectable={false}
+                style={{
+                  color: colors.onAccent,
+                  fontSize: 26,
+                  // the glyph centers optically only with a tight line box
+                  lineHeight: 28,
+                  textAlign: 'center',
+                }}
+              >
                 +
               </AppText>
             </View>
