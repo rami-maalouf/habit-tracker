@@ -137,7 +137,7 @@ export function SettingsScreen() {
           />
           <SettingsRow
             title="Version"
-            detail={`${meta.build.version} (${meta.buildVersion})`}
+            detail={`${meta.appVersion} (${meta.buildVersion})`}
             testID="settings-version"
           />
         </SettingsGroup>
