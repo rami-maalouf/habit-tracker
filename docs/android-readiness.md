@@ -8,7 +8,7 @@ replace only adapters and presentation - it may not fork product semantics.
 ## What is already portable
 
 Everything under `src/core/` imports no iOS-only API. A test enforces it
-(`tests/product/domain/android-readiness.test.ts`): the shared domain,
+(`tests/product/contracts/android-readiness.test.ts`): the shared domain,
 persistence contracts, calendar policy, analytics formulas, export schema,
 notification model, widget projection, sync record model, and automation
 command types are all free of `expo-notifications`, `expo-widgets`,
@@ -45,7 +45,7 @@ Every stub carries a `readiness` field naming its planned implementation.
 `src/core/automations/fixtures/intent-contract.json` is the single source of
 truth for the three intents this release exposes (Check In, Remove Latest
 Check-In, Get Today's Check-Ins). It is consumed verbatim by
-`tests/product/domain/automations.test.ts` today, and is what the future iOS
+`tests/product/contracts/automations.test.ts` today, and is what the future iOS
 AppIntents executor and Android App Actions executor must also pass.
 
 Board ids in the fixture are **stable handles**, not literal row ids: each

@@ -1,5 +1,41 @@
 # Checkpoints
 
+## Pre-fork work - 2026-09-07
+
+### 3.6 - focused contract and sync scripts
+
+1. Both focused scripts reproduced exit 1 with no tests found before the move.
+2. Moved automation and Android readiness contracts to `tests/product/contracts/`;
+   moved the engine/records/fake-transport suite and extracted the unchanged HLC
+   tests to `tests/product/sync/`. Updated the live documentation paths.
+3. Independent GPT-5.6 Luna inspection confirmed byte-identical moved suites,
+   unchanged HLC assertions, working relative imports, and unchanged coverage gates.
+4. Focused checks: 31 contract tests and 37 sync tests passed. Full isolated
+   pre-fork validation: 484 tests across 35 suites, lint/typecheck clean, core
+   coverage 100 percent on all metrics. Concurrent board/analytics/icon-picker
+   changes were excluded from this validation checkout rather than incorporated.
+5. Argent smoke: rebuilt iPhone 17 Pro simulator client opened Boards and the
+   Create Board/reminder sheets. Device `93EEF062-B4DC-4989-AF77-CF47EE2A9816`,
+   Metro 8082. Evidence stays under `.artifacts/pre-fork/`.
+
+### Decisions recorded from the current request
+
+- Apple developer membership exists; the signing team id, container provisioning,
+  physical iPhone, and second signed target have not been supplied.
+- CloudKit zone name: `habit-tracker`.
+- Creating Midnight and Paper artwork is authorized. Drafts have been generated;
+  visual approval is pending before native integration.
+- Direct CloudKit operations, the Swift intent executor, and the three product
+  spec amendments remain awaiting explicit approval.
+- A correctness correction to the draft transport scope also needs approval:
+  `.allKeys` can overwrite a newer server mutation before the JS engine fetches it.
+  The deterministic fake preserves the greater mutation stamp. Real transport
+  needs a server-stamp comparison plus `ifServerRecordUnchanged` conditional save
+  to preserve that invariant under concurrent writes, without changing the port.
+- Four reference board names are truncated in the supplied reference; full names
+  and the five release link destinations have been requested.
+- No native milestone deferral or fork-point tag is approved or recorded yet.
+
 ## Ripples product (SPEC-ripples-product.md) - stage checkpoints
 
 ### P1 - tracking core
