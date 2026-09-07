@@ -177,6 +177,30 @@
    the native module, generated-source template, and icon assets remain present.
    EAS may retain empty directory entries; they contain no source or private data.
 
+### Pre-fork closure status - signed acceptance pending
+
+- Landed and pushed: 3.6 scripts, 3.5 independent reminder review, 3.4 guarded
+  fixture (`9a93a02`), 3.7 approved spec corrections, and the implementation for
+  3.1 CloudKit, 3.2 App Intents, and 3.3 final icons (`eb2189f`).
+- Independent final GPT-5.6 Sol integration verdict: PASS. Provider lifecycle tests
+  passed 10/10; plugin tests passed 3/3; Development and Production introspection
+  matched the approved identities/environments; archive privacy and required build
+  inputs passed. The review did not count signed acceptance as completed.
+- Final source gates and simulator evidence are recorded above. Private references,
+  exports, credentials, generated native folders, and Swift build output are not
+  tracked. Only source flow definitions are committed, with their replay limits.
+- EAS accepted signed development build `6d550951-0fe7-4e16-9aee-9e68024b9ec5`
+  from `eb2189f0270e819193079f286bf79a5dd1f9d423`; status at this checkpoint:
+  In Progress. Build page:
+  https://expo.dev/accounts/ramimaalouf/projects/habit-tracker/builds/6d550951-0fe7-4e16-9aee-9e68024b9ec5
+- Remaining acceptance: signed physical iPhone plus second-target CloudKit
+  convergence, actual three Shortcuts and Siri execution, and physical widget/icon
+  checks. `tasks/pre-fork-device-acceptance.md` records the concrete acceptance path.
+  The paired physical iPhone remains unavailable to the machine.
+- Deferred by the user: release destination URLs. Native implementation is not
+  deferred to the fork, and signed acceptance has not been waived. Item 3.8 is
+  therefore still open. No `ripples-v1-fork-point` tag or habit-system fork was created.
+
 ### 3.6 - focused contract and sync scripts
 
 1. Both focused scripts reproduced exit 1 with no tests found before the move.
