@@ -211,6 +211,29 @@ describe('board commands', () => {
 });
 
 describe('check-in commands', () => {
+  it('projects fourteen real days on home while retaining seven days in widgets', async () => {
+    const harness = await createTestHarness();
+    harness.clock.utcMs = Date.UTC(2026, 7, 16, 16);
+    const boardId = await makeBoard(harness);
+    for (const day of [16, 17, 23, 29, 30]) {
+      harness.clock.utcMs = Date.UTC(2026, 7, day, 16);
+      const result = await createCheckIn(harness.deps, {
+        commandId: harness.ids.nextCommandId(),
+        boardId,
+        source: 'app',
+      });
+      expect(result.ok).toBe(true);
+    }
+
+    const home = await getHomeBoardProjection(harness.deps);
+    expect(home.ok && home.value[0].strip).toEqual([
+      1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1,
+    ]);
+    const widgets = await getWidgetProjection(harness.deps);
+    expect(widgets.ok && widgets.value[0].strip).toEqual([0, 0, 0, 0, 0, 1, 1]);
+    await harness.db.closeAsync();
+  });
+
   it('creates multiple check-ins per day and updates every projection', async () => {
     const harness = await createTestHarness();
     const boardId = await makeBoard(harness);
@@ -226,7 +249,7 @@ describe('check-in commands', () => {
     });
     expect(first.ok && second.ok).toBe(true);
     const home = await getHomeBoardProjection(harness.deps);
-    expect(home.ok && home.value[0].strip[6]).toBe(2);
+    expect(home.ok && home.value[0].strip[13]).toBe(2);
     const widgets = await getWidgetProjection(harness.deps);
     expect(widgets.ok && widgets.value[0].strip[6]).toBe(2);
     await harness.db.closeAsync();
@@ -245,7 +268,7 @@ describe('check-in commands', () => {
       source: 'widget',
     });
     const home = await getHomeBoardProjection(harness.deps);
-    expect(home.ok && home.value[0].strip[6]).toBe(2);
+    expect(home.ok && home.value[0].strip[13]).toBe(2);
     await harness.db.closeAsync();
   });
 
@@ -405,7 +428,7 @@ describe('check-in commands', () => {
     });
     expect(undone.ok).toBe(true);
     const home = await getHomeBoardProjection(harness.deps);
-    expect(home.ok && home.value[0].strip[6]).toBe(1);
+    expect(home.ok && home.value[0].strip[13]).toBe(1);
     await harness.db.closeAsync();
   });
 

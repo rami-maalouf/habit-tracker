@@ -56,15 +56,13 @@ describe('board symbol', () => {
   });
 });
 
-describe('seven day strip', () => {
-  it('treats a short strip as an empty today slot', () => {
-    const result = renderComponent(<SevenDayStrip strip={[1, 0, 1]} colors={light} />);
-    // three history bars, the separator, and the outlined today slot: the
-    // today slot renders even when the strip has no seventh value
+describe('daily history strip', () => {
+  it('renders fourteen days without an extra spacer before today', () => {
+    const result = renderComponent(<SevenDayStrip strip={[1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0]} colors={light} />);
     const bars = result.toJSON();
     expect(bars).not.toBeNull();
     const root = Array.isArray(bars) ? bars[0] : bars;
-    expect(root?.children?.length).toBe(5);
+    expect(root?.children?.length).toBe(14);
   });
 });
 

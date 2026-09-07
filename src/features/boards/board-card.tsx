@@ -1,6 +1,7 @@
 import { View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
+import { Icon } from '@/components/foundation/icon';
 import type { HomeBoardCard } from '@/core/domain/queries';
 import { minimumTouchTarget } from '@/foundation/accessibility';
 import { radius, radiusCurve, semanticColor, spacing } from '@/theme';
@@ -49,11 +50,13 @@ export function BoardCard({
         flexDirection: 'row',
         alignItems: 'center',
         backgroundColor: background,
+        borderWidth: 1,
+        borderColor: colors.cardBorder,
         borderRadius: radius.capsule,
         borderCurve: radiusCurve,
         paddingVertical: spacing.md,
         paddingHorizontal: spacing.lg,
-        gap: spacing.md,
+        gap: spacing.sm,
         minHeight: 72,
       }}
     >
@@ -85,7 +88,7 @@ export function BoardCard({
             label={`Move ${card.board.title} up`}
             testID={`${testID}-move-up`}
           >
-            <AppText selectable={false}>Up</AppText>
+            <Icon name="arrowUp" color={colors.accent} />
           </ProductPressable>
           <ProductPressable
             onPress={onMoveDown}
@@ -93,12 +96,12 @@ export function BoardCard({
             label={`Move ${card.board.title} down`}
             testID={`${testID}-move-down`}
           >
-            <AppText selectable={false}>Down</AppText>
+            <Icon name="arrowDown" color={colors.accent} />
           </ProductPressable>
         </View>
       ) : (
         <>
-          <SevenDayStrip strip={card.strip} colors={colors} />
+          <SevenDayStrip strip={card.strip} colors={colors} barWidth={4} barGap={3} />
           <ProductPressable
             onPress={onQuickCheckIn}
             disabled={quickPending || !onQuickCheckIn}

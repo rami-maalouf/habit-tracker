@@ -139,9 +139,9 @@ describe('scale budgets', () => {
     const byTitle = new Map(home.value.map((card) => [card.board.title, card]));
     expect(byTitle.get('midnight start')?.today).toBe('2026-08-30');
     expect(byTitle.get('noon start')?.today).toBe('2026-08-29');
-    // each card still reads its own seven days out of the shared window
-    expect(byTitle.get('midnight start')?.strip[6]).toBe(1);
-    expect(byTitle.get('noon start')?.strip[6]).toBe(0);
+    // each card still reads its own fourteen days out of the shared window
+    expect(byTitle.get('midnight start')?.strip[13]).toBe(1);
+    expect(byTitle.get('noon start')?.strip[13]).toBe(0);
     expect(byTitle.get('another midnight start')?.today).toBe('2026-08-30');
     void late;
     void alsoEarly;
@@ -179,9 +179,9 @@ describe('scale budgets', () => {
       throw new Error('home failed');
     }
     expect(home.value.value).toHaveLength(BOARD_COUNT);
-    // every card carries exactly seven strip values, so the list stays
+    // every card carries exactly fourteen strip values, so the list stays
     // renderable by a virtualized view
-    expect(home.value.value[0].strip).toHaveLength(7);
+    expect(home.value.value[0].strip).toHaveLength(14);
     expect(home.ms).toBeLessThan(20_000);
 
     const widget = await timed(() => getWidgetProjection(harness.deps));

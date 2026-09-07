@@ -6,6 +6,7 @@ export type DerivedBoardColors = {
   onAccent: string;
   // card background tint (only when the board uses a tinted background)
   tintedCardBackground: string;
+  cardBorder: string;
   // strip bar for inactive days
   inactiveBar: string;
   // fainter cell for days outside the board's activity periods
@@ -56,6 +57,7 @@ export function deriveBoardColors(
     accent: accentHex,
     onAccent: readableOn(accentHex),
     tintedCardBackground: withAlpha(accentHex, scheme === 'dark' ? 0.18 : 0.14),
+    cardBorder: withAlpha(accentHex, scheme === 'dark' ? 0.32 : 0.22),
     inactiveBar: scheme === 'dark' ? 'rgba(120, 120, 128, 0.28)' : 'rgba(120, 120, 128, 0.2)',
     unavailableCell: scheme === 'dark' ? 'rgba(120, 120, 128, 0.14)' : 'rgba(120, 120, 128, 0.1)',
   };

@@ -1,6 +1,6 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
+import { Platform, useColorScheme } from 'react-native';
 
 import { ProductProvider } from '@/features/product-store';
 import { cleanupStaleExports } from '@/platform/data-transfer';
@@ -13,6 +13,13 @@ import { cleanupStaleExports } from '@/platform/data-transfer';
 // tree were empty until a js reload)
 const sheet = {
   presentation: 'modal' as const,
+};
+
+const scrollingHeader = {
+  headerTransparent: Platform.OS === 'ios',
+  headerBlurEffect: 'systemUltraThinMaterial' as const,
+  headerShadowVisible: false,
+  headerBackButtonDisplayMode: 'minimal' as const,
 };
 
 // the add and edit check-in sheets are half-height per the reference. the
@@ -42,6 +49,8 @@ export default function RootLayout() {
     <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
       <ProductProvider>
         <Stack>
+          <Stack.Screen name="index" options={scrollingHeader} />
+          <Stack.Screen name="boards/[boardId]/index" options={scrollingHeader} />
           <Stack.Screen name="boards/new" options={sheet} />
           <Stack.Screen name="boards/[boardId]/edit" options={sheet} />
           <Stack.Screen name="boards/[boardId]/options" options={sheet} />

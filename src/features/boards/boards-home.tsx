@@ -1,14 +1,15 @@
 import { Stack, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FlatList, View } from 'react-native';
+import { FlatList, ScrollView, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
+import { Icon } from '@/components/foundation/icon';
 import { createCheckIn, reorderBoard, undoCreatedCheckIn } from '@/core/domain/commands';
 import type { BoardId, CheckInId, CommandId } from '@/core/domain/ids';
 import type { HomeBoardCard } from '@/core/domain/queries';
 import { getHomeBoardProjection } from '@/core/domain/queries';
 import { triggerActionHaptic } from '@/foundation/haptics';
-import { semanticColor, spacing } from '@/theme';
+import { semanticColor, semanticFallbacks, spacing } from '@/theme';
 
 import { BoardCard } from './board-card';
 import { InlineError, PrimaryButton, ProductPressable, useScheme } from '../ui';
@@ -137,7 +138,7 @@ export function BoardsHomeScreen() {
               hint="Opens settings"
               testID="open-settings"
             >
-              <AppText selectable={false}>•••</AppText>
+              <Icon name="settings" size={22} color={semanticFallbacks.label[scheme]} />
             </ProductPressable>
           ),
           headerRight: () => (
@@ -148,16 +149,14 @@ export function BoardsHomeScreen() {
                 selected={editMode}
                 testID="toggle-edit-boards"
               >
-                <AppText selectable={false}>{editMode ? 'Done' : 'Edit'}</AppText>
+                <Icon name={editMode ? 'checkmark' : 'pencil'} size={22} color={semanticFallbacks.label[scheme]} />
               </ProductPressable>
               <ProductPressable
                 onPress={() => router.push('/boards/new')}
                 label="Create board"
                 testID="create-board"
               >
-                <AppText variant="title2" selectable={false}>
-                  +
-                </AppText>
+                <Icon name="add" size={28} color={semanticFallbacks.label[scheme]} />
               </ProductPressable>
             </View>
           ),
@@ -166,10 +165,10 @@ export function BoardsHomeScreen() {
       {boards.status === 'loading' ? (
         <View testID="boards-loading" style={{ flex: 1 }} />
       ) : boards.status === 'error' ? (
-        <View style={{ padding: spacing.lg, gap: spacing.md }}>
+        <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
           <InlineError message={boards.error.message} testID="boards-error" />
           <PrimaryButton title="Try again" onPress={boards.refresh} />
-        </View>
+        </ScrollView>
       ) : boards.value.length === 0 ? (
         <View style={{ flex: 1, justifyContent: 'center', padding: spacing.xl, gap: spacing.lg }}>
           <AppText variant="title2" accessibilityRole="header">

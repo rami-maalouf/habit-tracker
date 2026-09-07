@@ -144,7 +144,7 @@ export async function getBoard(
 export type HomeBoardCard = {
   board: Board;
   today: LogicalDate;
-  // seven counts, oldest first, ending today
+  // fourteen counts, oldest first, ending today
   strip: number[];
 };
 
@@ -158,21 +158,21 @@ export function getHomeBoardProjection(
     }
     // boards can carry different start-of-day shifts, so their logical
     // todays differ; one grouped read spans the widest window and each
-    // card then reads its own seven days out of it
+    // card then reads its own fourteen days out of it
     const todays = boards.map((board) => boardToday(board, now, timeZoneId));
     // logical dates are iso strings, so a lexicographic sort bounds the
     // window without any special-casing
     const sorted = [...todays].sort();
     const counts = await dailyCountsForBoards(
       tx,
-      addDays(sorted[0], -6),
+      addDays(sorted[0], -13),
       sorted[sorted.length - 1],
     );
     return boards.map((board, index) => {
       const today = todays[index];
       const boardCounts = counts.get(board.id);
       const strip: number[] = [];
-      for (let offset = 6; offset >= 0; offset -= 1) {
+      for (let offset = 13; offset >= 0; offset -= 1) {
         strip.push(boardCounts?.get(addDays(today, -offset)) ?? 0);
       }
       return { board, today, strip };

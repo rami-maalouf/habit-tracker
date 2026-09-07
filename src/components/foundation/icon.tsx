@@ -9,6 +9,14 @@ export const icons = {
   settings: { sfSymbol: 'gearshape.fill', fallbackGlyph: '⚙' },
   checkmark: { sfSymbol: 'checkmark', fallbackGlyph: '✓' },
   close: { sfSymbol: 'xmark', fallbackGlyph: '×' },
+  pencil: { sfSymbol: 'pencil', fallbackGlyph: '✎' },
+  analytics: { sfSymbol: 'chart.bar', fallbackGlyph: '▥' },
+  checkIns: { sfSymbol: 'checklist', fallbackGlyph: '☑' },
+  journal: { sfSymbol: 'book.closed', fallbackGlyph: '▤' },
+  chevronLeft: { sfSymbol: 'chevron.left', fallbackGlyph: '‹' },
+  chevronRight: { sfSymbol: 'chevron.right', fallbackGlyph: '›' },
+  arrowUp: { sfSymbol: 'arrow.up', fallbackGlyph: '↑' },
+  arrowDown: { sfSymbol: 'arrow.down', fallbackGlyph: '↓' },
 } as const;
 
 export type IconName = keyof typeof icons;
