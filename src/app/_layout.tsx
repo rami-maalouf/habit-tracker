@@ -17,7 +17,11 @@ const sheet = {
 
 const scrollingHeader = {
   headerTransparent: Platform.OS === 'ios',
-  headerBlurEffect: 'systemUltraThinMaterial' as const,
+  // ios 26+ blurs the scrolling content itself; a header material obscures it.
+  headerBlurEffect:
+    Platform.OS === 'ios' && Number.parseInt(Platform.Version, 10) >= 26
+      ? ('none' as const)
+      : ('systemUltraThinMaterial' as const),
   headerShadowVisible: false,
   headerBackButtonDisplayMode: 'minimal' as const,
 };

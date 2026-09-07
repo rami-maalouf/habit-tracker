@@ -34,6 +34,10 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
   const summary = useProductQuery((c) => getBoardSummary(c, boardId), [boardId]);
   const heatmap = useProductQuery((c) => getBoardHeatmap(c, boardId), [boardId]);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [scrollHeaderReady, setScrollHeaderReady] = useState(false);
+  const resetScrollHeader = useCallback((view: ScrollView | null) => {
+    if (view === null) setScrollHeaderReady(false);
+  }, []);
 
   const confirmDelete = useCallback(async () => {
     const counts = await getBoardDependentCounts(core, boardId);
@@ -87,11 +91,14 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
         ? heatmap.error
         : null;
 
+  // keep the scroll view in the first native descendant chain for ios edge effects.
   return (
-    <View style={{ flex: 1, backgroundColor: semanticColor('groupedBackground', scheme) }}>
+    <View collapsable={false} style={{ flex: 1, backgroundColor: semanticColor('groupedBackground', scheme) }}>
       <Stack.Screen
         options={{
           title: record.title,
+          // native layout must finish before navigation can find the scroll view.
+          scrollEdgeEffects: { top: scrollHeaderReady ? 'soft' : 'automatic' },
           headerRight: archived
             ? undefined
             : () => (
@@ -106,6 +113,8 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
         }}
       />
       <ScrollView
+        ref={resetScrollHeader}
+        onLayout={() => setScrollHeaderReady(true)}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg }}
       >

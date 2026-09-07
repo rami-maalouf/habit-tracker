@@ -37,6 +37,10 @@ export function BoardsHomeScreen() {
   const [quickError, setQuickError] = useState<string | null>(null);
   const [undo, setUndo] = useState<UndoState | null>(null);
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [scrollHeaderReady, setScrollHeaderReady] = useState(false);
+  const resetScrollHeader = useCallback((view: FlatList<HomeBoardCard> | null) => {
+    if (view === null) setScrollHeaderReady(false);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -128,11 +132,14 @@ export function BoardsHomeScreen() {
     [core, invalidate, nextCommandId],
   );
 
+  // keep the scroll view in the first native descendant chain for ios edge effects.
   return (
-    <View style={{ flex: 1, backgroundColor: semanticColor('groupedBackground', scheme) }}>
+    <View collapsable={false} style={{ flex: 1, backgroundColor: semanticColor('groupedBackground', scheme) }}>
       <Stack.Screen
         options={{
           title: 'Boards',
+          // native layout must finish before navigation can find the scroll view.
+          scrollEdgeEffects: { top: scrollHeaderReady ? 'soft' : 'automatic' },
           headerLeft: () => (
             <ProductPressable
               onPress={() => router.push('/settings')}
@@ -184,6 +191,8 @@ export function BoardsHomeScreen() {
         </View>
       ) : (
         <FlatList
+          ref={resetScrollHeader}
+          onLayout={() => setScrollHeaderReady(true)}
           data={boards.value}
           keyExtractor={(card) => card.board.id}
           contentInsetAdjustmentBehavior="automatic"
