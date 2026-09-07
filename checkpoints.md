@@ -287,6 +287,25 @@
     parallel agents. Simulator Shortcuts/widget and icon/accessibility checks run
     separately from the physical iPad sync checks; neither simulator is reset.
 
+### Settings status accessibility correction
+
+1. Physical iCloud acceptance exposed that read-only Settings rows were disabled
+   pressables whose explicit accessibility label hid their displayed value.
+   Status, queue size, last sync, and version now expose grouped static text with
+   a label and value. Actionable rows retain their button behavior and include
+   detail in their accessible name. Existing layout and minimum height remain.
+2. The new regression failed before the correction and passed afterward. Full
+   validation passes: 570 tests across 45 suites, lint/typecheck, global coverage
+   97.5/95.5/95.58/97.6, and unchanged 100 percent core gates. Logs:
+   `.artifacts/pre-fork/settings-accessibility-red.log` and
+   `.artifacts/pre-fork/ipad-final-validate.log`.
+3. Independent GPT-5.6 Luna source review: PASS, including 22 Settings tests and
+   lint/typecheck. A separate device verifier inspected the actual Pro Max native
+   accessibility tree: Status/Off, Waiting to upload/0, Last sync/Never, and
+   Version/1.0.0 (1) expose only static-text traits. Evidence:
+   `.artifacts/pre-fork/icons-accessibility-acceptance/native-readonly-status.json`.
+   This UI check does not claim signed CloudKit account acceptance.
+
 ### 3.6 - focused contract and sync scripts
 
 1. Both focused scripts reproduced exit 1 with no tests found before the move.

@@ -1,6 +1,7 @@
 import { View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
+import { minimumTouchTarget } from '@/foundation/accessibility';
 import { radius, radiusCurve, semanticColor, spacing } from '@/theme';
 
 import { ProductPressable, useScheme } from '../ui';
@@ -52,41 +53,60 @@ export function SettingsRow({
   disabled?: boolean;
   testID?: string;
 }) {
+  const content = (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.md,
+        gap: spacing.md,
+      }}
+    >
+      <AppText accessible={false} selectable={false} style={{ flexShrink: 1 }}>
+        {title}
+      </AppText>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+        {detail ? (
+          <AppText accessible={false} variant="footnote" selectable={false}>
+            {detail}
+          </AppText>
+        ) : null}
+        {onPress ? (
+          <AppText accessible={false} variant="footnote" selectable={false}>
+            {external ? '↗' : '›'}
+          </AppText>
+        ) : null}
+      </View>
+    </View>
+  );
+
+  if (!onPress) {
+    return (
+      <View
+        accessible
+        accessibilityRole="text"
+        accessibilityLabel={title}
+        accessibilityValue={detail === undefined ? undefined : { text: detail }}
+        testID={testID}
+        style={{ minHeight: minimumTouchTarget, justifyContent: 'center' }}
+      >
+        {content}
+      </View>
+    );
+  }
+
   return (
     <ProductPressable
       onPress={onPress}
-      disabled={disabled || !onPress}
-      label={title}
+      disabled={disabled}
+      label={detail ? `${title}, ${detail}` : title}
       hint={external ? 'Opens outside the app' : undefined}
       stretch
       testID={testID}
     >
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingHorizontal: spacing.lg,
-          paddingVertical: spacing.md,
-          gap: spacing.md,
-        }}
-      >
-        <AppText selectable={false} style={{ flexShrink: 1 }}>
-          {title}
-        </AppText>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
-          {detail ? (
-            <AppText variant="footnote" selectable={false}>
-              {detail}
-            </AppText>
-          ) : null}
-          {onPress ? (
-            <AppText variant="footnote" selectable={false}>
-              {external ? '↗' : '›'}
-            </AppText>
-          ) : null}
-        </View>
-      </View>
+      {content}
     </ProductPressable>
   );
 }

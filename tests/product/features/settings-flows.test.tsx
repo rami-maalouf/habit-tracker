@@ -334,6 +334,15 @@ describe('icloud sync settings', () => {
     alertSpy.mockClear();
   });
 
+  it('exposes sync status and queue values as readable information', async () => {
+    renderRouter('src/app', { initialUrl: '/settings/sync' });
+    await screen.findByTestId('icloud-toggle');
+    expect(screen.getByRole('text', { name: 'Status' })).toHaveAccessibilityValue({ text: 'Off' });
+    expect(screen.getByRole('text', { name: 'Waiting to upload' })).toHaveAccessibilityValue({ text: '0' });
+    expect(screen.getByRole('text', { name: 'Last sync' })).toHaveAccessibilityValue({ text: 'Never' });
+    expect(screen.queryByRole('button', { name: 'Status' })).toBeNull();
+  });
+
   it('explains where the data goes before turning sync on', async () => {
     renderRouter('src/app', { initialUrl: '/settings/sync' });
     await screen.findByTestId('icloud-toggle');
