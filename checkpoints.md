@@ -68,6 +68,19 @@
    during this work. They are preserved and excluded from the scoped commits and
    isolated gate. A combined working-tree validation must pass before fork closure.
 
+### 3.8 - repository privacy audit (partial)
+
+1. Removed three private screenshot artifacts under `.agents/evidence/` from the
+   Git index, preserving all originals locally. Added scoped ignore rules for that
+   evidence directory, exported bundles, and an explicit root export directory.
+2. Existing rules cover `.artifacts/`, `design/ripples-screenshots/`, generated
+   `ios/` and `android/`, and `.env.secrets.local`. `git check-ignore` verifies
+   representative paths; `git ls-files` contains none of these private/generated
+   paths after removal. Independent GPT-5.6 Sol hygiene review passed.
+3. This is only the privacy portion of fork readiness. Product/native approvals,
+   signed-device acceptance, and combined working-tree validation remain pending;
+   `ripples-v1-fork-point` has not been created.
+
 ### Decisions recorded from the current request
 
 - Apple developer membership exists; the signing team id, container provisioning,

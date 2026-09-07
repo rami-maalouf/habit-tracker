@@ -44,7 +44,11 @@ design/ripples-screenshots/
 
 # private validation evidence and export bundles
 .artifacts/
+.agents/evidence/
 dist-validation/
+/exports/
+ripples-export-*.json
+ripples-export-*.csv
 
 # test output
 coverage/
