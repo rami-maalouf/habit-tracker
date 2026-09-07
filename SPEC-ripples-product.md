@@ -12,6 +12,8 @@ Status: Phase 1 complete - awaiting human approval for Fable 5 handoff
 
 Date: 2026-08-30
 
+UI amendment: 2026-09-07. The user's request in the UI polish session authorizes native translucent Home/detail headers, larger icon actions, fourteen-day Home history with even spacing and subtle habit-colored borders, an expanded native icon sheet, removal of example prompts, and richer real-history analytics. These requirements supersede the original reference UI choices below. Widget history remains seven days.
+
 ## Resolved assumptions and decisions
 
 1. Ripples is governed by exactly two implementation specifications: SPEC-native-foundation.md and this document. No additional per-module specification is required.
@@ -37,7 +39,7 @@ The product should feel calm and immediate. A check-in must take one tap when th
 
 - Create, configure, reorder, archive, restore, and permanently delete boards.
 - Record repeated check-ins quickly or enter their date, time, amount, and note manually.
-- Read a seven-day strip, one-year heatmap, history, journal, streak, consistency, timeline, weekday, month, and year-comparison views.
+- Read fourteen-day Home history, seven-day widget history, one-year heatmap, history, journal, streak, consistency, timeline, weekday, month, and year-comparison views.
 - Schedule local reminders by weekday and wall-clock time.
 - Use all supported iOS Home Screen widget sizes and check in from a widget.
 - Export a complete offline snapshot through the native share sheet.
@@ -128,8 +130,8 @@ The product should feel calm and immediate. A check-in must take one tap when th
 - Weekday analytics use the rolling 365 logical days ending today. Workdays are Monday through Friday and weekends are Saturday and Sunday.
 - Year comparison uses calendar months for the selected year and the immediately preceding year. Missing periods are zero, future months in the selected current year are unavailable, and leap day belongs to February.
 - Count labels display integers. Percentages round half away from zero to the nearest whole percent. Raw values remain unrounded until presentation.
-- Streak is available after the first completed day. Consistency and weekday analysis require seven elapsed eligible days. Year comparison renders the selected year immediately and explains when no prior-year data exists.
-- Disabling performance metrics hides metrics cards and analytics entry points without deleting check-ins or derived data. Seven-day strips and heatmaps remain available.
+- Streak is available after the first completed day. The overview shows counts and the observed consistency percentage immediately, with the number of tracked days for new habits. Consistency bands, monthly consistency analysis, and weekday analysis require seven elapsed eligible days. Year comparison renders the selected year immediately and explains when no prior-year data exists.
+- Disabling performance metrics hides metrics cards and analytics entry points without deleting check-ins or derived data. History strips and heatmaps remain available.
 
 ### Archive and deletion
 
@@ -171,12 +173,16 @@ The product should feel calm and immediate. A check-in must take one tap when th
 
 The initial color palette is Graphite #8E8E93, White #F2F2F7, Green #78D98B, Purple #8F82FF, Pink #E58BA6, Blue #70A7FF, and a custom color picker. The renderer derives accessible foreground and fill variants instead of trusting the raw accent to provide contrast.
 
-The symbol row opens a searchable picker over this exact initial allowlist:
+The symbol row opens a native bottom sheet with keyword search and eight categories over this 64-icon allowlist. Selection updates the draft and preview; Save persists the icon, and cancelling the form discards it.
 
 - calendar, star.fill, carrot.fill, bed.double.fill, iphone.slash, play.rectangle.fill, pills.fill, and checkmark.circle.fill
 - figure.walk, figure.run, bicycle, dumbbell.fill, heart.fill, brain.head.profile, leaf.fill, drop.fill, and flame.fill
 - book.fill, pencil, paintbrush.fill, music.note, cup.and.saucer.fill, fork.knife, takeoutbag.and.cup.and.straw.fill, and moon.stars.fill
 - sun.max.fill, alarm.fill, timer, desktopcomputer, phone.fill, person.2.fill, and pawprint.fill
+- mouth.fill, bandage.fill, lungs.fill, figure.pool.swim, figure.mind.and.body, soccerball, basketball.fill, and mug.fill
+- waterbottle.fill, birthday.cake.fill, fish.fill, magnifyingglass, checklist, guitars.fill, camera.fill, and paintpalette.fill
+- scissors, keyboard.fill, mic.fill, house.fill, sparkles, suitcase.fill, gift.fill, and cart.fill
+- tree.fill, mountain.2.fill, tent.fill, globe.americas.fill, airplane, location.north.circle.fill, sun.haze.fill, and umbrella.fill
 
 The allowlist is versioned product data. Unsupported symbol names use a deterministic circle fallback and fail development validation.
 
@@ -379,9 +385,9 @@ All ports have deterministic fakes. Platform errors are translated once at the a
 ### Boards home
 
 - The root route is the Boards home shown by design/ripples-screenshots/1-home.png.
-- The native stack title is Boards. A leading overflow control opens Settings and a trailing add control opens Create Board.
+- The native stack title is Boards. The header is translucent and blurs content scrolling beneath it. A leading settings icon opens Settings, with trailing edit and larger plus icons.
 - Active boards render in deterministic order in a virtualized list.
-- Each board card shows its symbol, title, accessible full title, derived tint, seven logical days ending today, and a circular quick-check-in action.
+- Each board card shows its symbol, title, accessible full title, derived tint, a subtle accent-colored border, fourteen logical days ending today, and a circular quick-check-in action. Today has the same spacing as every other day, with no extra separator.
 - Visible truncation uses one line and an ellipsis. VoiceOver reads the complete title.
 - A successful quick check-in updates the card, heatmap, metrics, history, widget projection, sync outbox, and Undo state from one committed transaction.
 - While a quick command is pending, only that board's action is disabled. A failure restores the previous presentation and exposes a retryable message.
@@ -392,11 +398,11 @@ All ports have deterministic fakes. Platform errors are translated once at the a
 ### Board detail
 
 - Selecting a board opens /boards/[boardId].
-- The header provides Back and Edit. The body shows the title, rolling heatmap, metrics education or metrics cards, and the reference bottom actions for Analytics, Check-Ins, Journal, and Add Check-In.
+- The translucent header provides Back and Edit icons. The body shows the rolling heatmap, real metrics cards, and icon actions for Analytics, Check-Ins, Journal, and Add Check-In, retaining accessible labels.
 - The heatmap shows the rolling 365 logical days ending today in ISO Monday-through-Sunday rows. Horizontal navigation exposes older years without loading all history at once.
 - Every cell has a text alternative containing date and check-in count. Color is not the only state signal.
-- Board summary includes Current Streak, Longest Streak, Consistency, Current Month, Current Week, and a compact daily-count chart.
-- The metrics education card is shown until seven eligible days exist or the person dismisses it. It includes the reference action Look at example boards, which opens a local, read-only explanation rather than creating fixture data.
+- Board summary includes Current Streak, Longest Streak, Consistency, Current Month, Current Week, active days, weekly completion with upcoming-day states, and a scaled daily-count chart. Analytics includes this overview with factual totals and busiest-weekday summaries.
+- No metrics education card or example-board prompt appears. Existing dismissal records remain compatible with stored and synced data.
 - If metricsEnabled is false, metrics cards and Analytics are replaced by an explanation and Enable Metrics action.
 - Archived detail is read-only except for Restore and Delete Board.
 - Missing or deleted board ids show a recovery route back to Boards.
@@ -610,8 +616,8 @@ All ports have deterministic fakes. Platform errors are translated once at the a
 
 | Reference | Required implementation evidence |
 | --- | --- |
-| 1-home.png | Boards header, ordered tinted cards, seven-day strips, truncation, quick actions |
-| 2-habit-main-page.png | Board detail, rolling heatmap, metrics education, summary cards, bottom actions |
+| 1-home.png | Boards header, ordered tinted cards, truncation, quick actions; the 2026-09-07 amendment replaces seven-day strips with fourteen days |
+| 2-habit-main-page.png | Board detail, rolling heatmap, summary cards, bottom actions; the 2026-09-07 amendment removes education and updates materials and controls |
 | 3-edit-button-clicked.png | Edit preview, symbol, name, palette, tint, amount toggle, reminder entry |
 | 4-scrolled-down.png | Options entry, archive, delete, scroll behavior |
 | 5-options-clicked.png | exact-time toggle, start-of-day shift, metrics toggle |
@@ -1044,7 +1050,7 @@ The Ripples product is complete only when all criteria below are true.
 7. Boards home, Board Detail, Create and Edit Board, Options, reminders, Check-Ins, Add and Edit Check-In, Analytics, Journal, Settings, Archived Boards, Icons, Sync, and Export routes are complete.
 8. The private reference hierarchy and information density are reproduced in dark mode, with approved light-mode counterparts.
 9. Quick check-in, Undo, manual entry, edit, delete, reorder, archive, restore, and permanent delete work end to end.
-10. Heatmap, seven-day strip, summaries, timeline, weekdays, year comparison, consistency, and streaks match the approved formulas.
+10. Heatmap, fourteen-day Home history, seven-day widget history, summaries, timeline, weekdays, year comparison, consistency, and streaks match the approved formulas.
 11. Lists remain genuinely virtualized at the performance fixture sizes.
 12. Every empty, sparse, loading, validation, database, permission, platform-unavailable, and retryable failure state is intentional and accessible.
 
