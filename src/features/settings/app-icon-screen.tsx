@@ -1,4 +1,5 @@
 import { Stack } from 'expo-router';
+import { Image } from 'expo-image';
 import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
@@ -7,15 +8,15 @@ import { setSelectedIcon } from '@/core/domain/commands';
 import type { SelectedIcon } from '@/core/domain/entities';
 import { getAppSettings } from '@/core/domain/queries';
 import { setAlternateIcon, supportsAlternateIcons } from '@/platform/alternate-icons';
-import { radius, radiusCurve, semanticColor, spacing } from '@/theme';
+import { radius, semanticColor, spacing } from '@/theme';
 
 import { useProduct, useProductQuery } from '../product-store';
 import { InlineError, PrimaryButton, ProductPressable, useScheme } from '../ui';
 
 const ICON_PREVIEWS = [
-  { id: 'default', name: 'Default', light: '#78D98B', dark: '#111111' },
-  { id: 'midnight', name: 'Midnight', light: '#111111', dark: '#78D98B' },
-  { id: 'paper', name: 'Paper', light: '#F2F2F7', dark: '#3A3A3C' },
+  { id: 'default', name: 'Default', source: require('../../../assets/images/icon.png') },
+  { id: 'midnight', name: 'Midnight', source: require('../../../assets/images/alternate-icons/midnight.png') },
+  { id: 'paper', name: 'Paper', source: require('../../../assets/images/alternate-icons/paper.png') },
 ] as const;
 
 function nativeName(icon: SelectedIcon) {
@@ -31,7 +32,10 @@ export function AppIconScreen() {
   const [busy, setBusy] = useState(false);
   const busyRef = useRef(false);
   const [failure, setFailure] = useState<{ icon: SelectedIcon; message: string } | null>(null);
-  const selected = settings.status === 'ready' ? settings.value?.selectedIcon : undefined;
+  const savedSelection = settings.status === 'ready' ? settings.value?.selectedIcon : undefined;
+  const [confirmedSelection, setConfirmedSelection] = useState<SelectedIcon | undefined>(undefined);
+  const confirmedRef = useRef<SelectedIcon | undefined>(undefined);
+  const selected = confirmedSelection ?? savedSelection;
 
   useEffect(() => {
     let cancelled = false;
@@ -47,13 +51,15 @@ export function AppIconScreen() {
     busyRef.current = true;
     setBusy(true);
     setFailure(null);
-    const previous = selected;
+    const previous = confirmedRef.current ?? selected;
     let platformChanged = false;
     try {
       await setAlternateIcon(nativeName(icon));
       platformChanged = true;
       const result = await setSelectedIcon(core, { commandId: nextCommandId(), icon });
       if (!result.ok) throw new Error('icon setting could not be saved');
+      confirmedRef.current = icon;
+      setConfirmedSelection(icon);
       invalidate();
     } catch {
       let restored = true;
@@ -95,31 +101,21 @@ export function AppIconScreen() {
               onPress={() => { void choose(icon.id); }}
               style={{ alignItems: 'center', gap: spacing.sm }}
             >
-              <View
+              <Image
                 accessible
                 accessibilityLabel={`${icon.name} icon preview`}
+                accessibilityRole="image"
+                source={icon.source}
+                contentFit="cover"
                 style={{
                   width: 64,
                   height: 64,
                   borderRadius: radius.lg,
-                  borderCurve: radiusCurve,
-                  backgroundColor: icon.light,
                   borderWidth: 1,
                   borderColor: semanticColor('separator', scheme),
-                  alignItems: 'center',
-                  justifyContent: 'center',
                 }}
                 testID={`icon-preview-${icon.name.toLowerCase()}`}
-              >
-                <View
-                  style={{
-                    width: 22,
-                    height: 22,
-                    borderRadius: 11,
-                    backgroundColor: icon.dark,
-                  }}
-                />
-              </View>
+              />
               <AppText variant="footnote">{icon.name}</AppText>
               {selected === icon.id ? <AppText variant="footnote">Selected</AppText> : null}
             </ProductPressable>

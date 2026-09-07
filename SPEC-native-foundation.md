@@ -262,9 +262,9 @@ Before these calls, the implementing agent reads the relevant Argent setup and i
 ### Argent launch and structure validation
 
 ```text
-mcp__argent__launch_app({ udid: "<ios-simulator-udid>", bundleId: "com.ramimaalouf.habittracker" })
+mcp__argent__launch_app({ udid: "<ios-simulator-udid>", bundleId: "studio.orbitlabs.habittracker" })
 mcp__argent__open_url({ udid: "<ios-simulator-udid>", url: "habittracker://foundation-preview" })
-mcp__argent__describe({ udid: "<ios-simulator-udid>", bundleId: "com.ramimaalouf.habittracker" })
+mcp__argent__describe({ udid: "<ios-simulator-udid>", bundleId: "studio.orbitlabs.habittracker" })
 mcp__argent__debugger_connect({ device_id: "<ios-simulator-udid>", port: 8081 })
 mcp__argent__debugger_status({ device_id: "<ios-simulator-udid>", port: 8081 })
 mcp__argent__debugger_log_registry({ device_id: "<ios-simulator-udid>", port: 8081 })
@@ -542,7 +542,7 @@ The `native-foundation` module is complete only when all criteria below are true
 1. `CAPABILITY-MAP.md` identifies `native-foundation`, and this spec remains scoped to that module.
 2. `xcrun --find simctl` succeeds, Argent lists the target iOS simulator, and Argent can boot it.
 3. An iPhone 16 Pro class simulator runs iOS 26.6 at a 402 by 874 point viewport, or the human approves a precisely documented equivalent.
-4. The app installs and launches through the development client with bundle id `com.ramimaalouf.habittracker`.
+4. The app installs and launches through the development client with bundle id `studio.orbitlabs.habittracker`.
 5. Expo Router loads routes from `src/app/`, `/` always resolves, and unmatched routes provide recovery.
 6. The starter tab demo and unused template components are removed without leaving dead imports, routes, assets, or dependencies.
 7. The `/` route renders the native stack title `Ripples` and selectable text `Native foundation ready`, uses automatic safe-area inset adjustment, and contains no downstream navigation, persistence, or feature behavior.

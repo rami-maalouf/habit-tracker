@@ -12,6 +12,8 @@ Pod::Spec.new do |s|
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
+  s.frameworks = 'CloudKit', 'AppIntents', 'WidgetKit'
+  s.libraries = 'sqlite3'
 
   # swift/objective-c compatibility
   s.pod_target_xcconfig = {

@@ -7,6 +7,22 @@ public class RipplesAppleModule: Module {
   public func definition() -> ModuleDefinition {
     Name("RipplesApple")
 
+    AsyncFunction("cloudKitAvailable") { (promise: Promise) in
+      CloudKitExpoBridge.available(promise)
+    }
+
+    AsyncFunction("cloudKitEnsureZone") { (promise: Promise) in
+      CloudKitExpoBridge.ensureZone(promise)
+    }
+
+    AsyncFunction("cloudKitUpload") { (recordsJSON: String, promise: Promise) in
+      CloudKitExpoBridge.upload(recordsJSON, promise: promise)
+    }
+
+    AsyncFunction("cloudKitFetchChanges") { (token: String?, promise: Promise) in
+      CloudKitExpoBridge.fetchChanges(token, promise: promise)
+    }
+
     AsyncFunction("supportsAlternateIcons") { () -> Bool in
       AlternateIconAdapter.supportsAlternateIcons()
     }.runOnQueue(.main)

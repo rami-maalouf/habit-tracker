@@ -1,5 +1,13 @@
 # EAS Simulator teaser runbook
 
+Current-source update, 2026-09-07: new builds use `studio.orbitlabs.habittracker`.
+For a populated demo, an empty development build can open
+`studio.orbitlabs.habittracker:///reference-august-2026` and explicitly add seven boards
+with August activity. The action refuses an existing database and never changes the
+clock. The private acceptance evidence and reusable Argent flows are recorded in
+`checkpoints.md`. The older dry run below remains pinned to its original binary and
+bundle id; its old build does not include the new fixture or native module.
+
 status: dry run passed on 2026-08-31
 
 go/no-go: **go for a live beat 3 inside an edited take.** The agent-driven flow was

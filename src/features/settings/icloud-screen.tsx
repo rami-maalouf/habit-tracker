@@ -1,13 +1,12 @@
 import { Stack } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, ScrollView, Switch, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, AppState, ScrollView, Switch, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
 import { setICloudSyncEnabled } from '@/core/domain/commands';
 import { getSyncSummary } from '@/core/domain/queries';
 import type { SyncStatus } from '@/core/sync/engine';
-import { runSync } from '@/core/sync/engine';
-import { cloudKitAvailable, cloudKitTransport } from '@/platform/sync';
+import { cloudKitAvailable } from '@/platform/sync';
 import { radius, radiusCurve, semanticColor, spacing } from '@/theme';
 
 import { InlineError, PrimaryButton, useScheme } from '../ui';
@@ -27,93 +26,48 @@ const STATUS_LABELS: Record<SyncStatus, string> = {
 // the engine's own status. raw provider errors never reach this screen.
 export function ICloudScreen() {
   const scheme = useScheme();
-  const { core, invalidate, nextCommandId } = useProduct();
+  const { core, invalidate, nextCommandId, sync: syncState, syncNow, pauseSync, resumeSync } = useProduct();
   const summary = useProductQuery((c) => getSyncSummary(c), []);
-  const [status, setStatus] = useState<SyncStatus | null>(null);
-  const [busy, setBusy] = useState(false);
+  const { status, busy } = syncState;
   const [error, setError] = useState<string | null>(null);
-  // a generation token: turning sync off invalidates any pass already in
-  // flight, so its result never lands and no retry is armed
-  const generation = useRef(0);
-  const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [available, setAvailable] = useState<boolean | null>(null);
 
-  const stopSyncWork = useCallback(() => {
-    generation.current += 1;
-    if (retryTimer.current !== null) {
-      clearTimeout(retryTimer.current);
-      retryTimer.current = null;
-    }
-  }, []);
-
-  useEffect(() => stopSyncWork, [stopSyncWork]);
-
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      void cloudKitAvailable().then(
+        (value) => { if (!cancelled) setAvailable(value); },
+        () => { if (!cancelled) setAvailable(false); },
+      );
+    };
+    refresh();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') refresh();
+    });
+    return () => { cancelled = true; subscription.remove(); };
+  }, [status]);
   const ready = summary.status === 'ready' ? summary.value : null;
   const enabled = ready !== null && ready.enabled;
-
-  const sync = useCallback(
-    async function run(): Promise<void> {
-      const mine = generation.current;
-      setBusy(true);
-      setError(null);
-      setStatus('syncing');
-      const result = await runSync({
-        db: core.db,
-        clock: core.clock,
-        transport: cloudKitTransport,
-        random: Math.random,
-      });
-      if (mine !== generation.current) {
-        // sync was turned off while this pass ran; drop its outcome
-        return;
-      }
-      setBusy(false);
-      if (!result.ok) {
-        setStatus(null);
-        setError(result.error.message);
-        return;
-      }
-      setStatus(result.value.status);
-      invalidate();
-      // a failed pass schedules its own retry with the engine's backoff
-      if (result.value.retryAfterMs !== null) {
-        retryTimer.current = setTimeout(() => {
-          if (mine === generation.current) {
-            void run();
-          }
-        }, result.value.retryAfterMs);
-      }
-    },
-    [core, invalidate],
-  );
 
   const setEnabled = useCallback(
     (next: boolean) => {
       const apply = () => {
+        setError(null);
         if (!next) {
           // stop before the write, so nothing in flight can outlive the
           // moment the person turned sync off
-          stopSyncWork();
+          pauseSync();
         }
         void setICloudSyncEnabled(core, { commandId: nextCommandId(), enabled: next }).then(
           (result) => {
             if (!result.ok) {
               setError(result.error.message);
-              // a failed disable leaves sync enabled while the pass it
-              // cancelled can no longer report anything, so the screen has
-              // to release both the busy state and the stale `syncing`
-              // label or it shows "Syncing…" next to a live Sync Now
-              setBusy(false);
-              setStatus(null);
+              if (!next) resumeSync();
               return;
             }
             invalidate();
-            if (next) {
-              void sync();
-            } else {
-              // disabling suspends network work and keeps every local record
-              setStatus(null);
-              setBusy(false);
-            }
+            if (next) resumeSync();
+
           },
         );
       };
@@ -130,7 +84,7 @@ export function ICloudScreen() {
         ],
       );
     },
-    [core, invalidate, nextCommandId, stopSyncWork, sync],
+    [core, invalidate, nextCommandId, pauseSync, resumeSync],
   );
 
   const pending = ready === null ? 0 : ready.pendingChanges;
@@ -167,7 +121,7 @@ export function ICloudScreen() {
         <SettingsGroup>
           <SettingsRow
             title="Status"
-            detail={status === null ? (enabled ? 'Idle' : 'Off') : STATUS_LABELS[status]}
+            detail={enabled ? STATUS_LABELS[status] : 'Off'}
             testID="icloud-status"
           />
           <SettingsRow title="Waiting to upload" detail={String(pending)} testID="icloud-pending" />
@@ -188,19 +142,20 @@ export function ICloudScreen() {
         {enabled ? (
           <PrimaryButton
             title={busy ? 'Syncing…' : 'Sync Now'}
-            onPress={() => void sync()}
+            onPress={syncNow}
             disabled={busy}
             testID="icloud-sync-now"
           />
         ) : null}
 
-        {error ? <InlineError message={error} testID="icloud-error" /> : null}
+        {error || syncState.error ? <InlineError message={error ?? syncState.error!} testID="icloud-error" /> : null}
 
-        {!cloudKitAvailable ? (
+        {available === false || status === 'needs_attention' ? (
           <AppText variant="footnote" testID="icloud-unavailable">
-            This build cannot reach iCloud yet: the CloudKit container needs an app signed with an
-            Apple Developer team. Sync stays reported as Needs Attention until then, every local
-            change is queued, and Export Data always gives you a portable copy.
+            iCloud is unavailable on this device right now. Your changes stay queued, and Export
+            Data always gives you a portable copy.
+            {' '}If you changed iCloud accounts, sign back into the account originally used for
+            sync on this device.
           </AppText>
         ) : null}
         <AppText variant="footnote">

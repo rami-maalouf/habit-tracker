@@ -81,7 +81,7 @@ The product should feel calm and immediate. A check-in must take one tap when th
 ### Source of truth
 
 - The normalized SQLite database is the only local source of truth.
-- The database is created in group.com.ramimaalouf.habittracker from its first production migration so the app and widget extension use one stable location.
+- The database is created in group.studio.orbitlabs.habittracker from its first production migration so the app and widget extension use one stable location.
 - React state, widget timelines, scheduled notification identifiers, export files, CloudKit records, and App Intent entities are views or adapters. None becomes a second product database.
 - Widgets read only a dedicated materialized widget projection stored in the shared database. They do not issue ad hoc queries against normalized tables.
 - Every product mutation enters through a named command. UI event handlers and platform adapters do not write SQL directly.
@@ -495,13 +495,13 @@ All ports have deterministic fakes. Platform errors are translated once at the a
 - Timeline is a release-notes destination. It is not the board Journal.
 - Version and build come from expo-application.
 - Rate Ripples opens the configured App Store review URL. It does not call an in-app review prompt directly from the button.
-- Product links are validated HTTPS values from release configuration. A development build shows an explicit Missing release link message. Production validation fails if any required URL or App Store id is absent.
+- Release destinations are owned by `src/features/settings/release-links.ts` and accepted only as HTTPS values. They remain unset during development with an explicit Missing release link message. Supplying and verifying the final destinations and App Store id is deferred to release delivery.
 - App Icon offers Default, Midnight, and Paper previews. Selection uses the approved native alternate-icon adapter and persists only after the platform confirms success.
 - Archived Boards lists archived records newest first and allows Read, Restore, or Delete.
 - External-link failures remain on Settings and show a recoverable message.
 - No reset-all-data action is part of this release.
 
-### Offline data export
+### Offline data export and import
 
 - Export Data generates one UTF-8 JSON file named ripples-export-YYYY-MM-DDTHH-mm-ssZ.json in the cache directory and presents it through the native share sheet.
 - The top-level format is ripples.export with exportVersion 1, databaseSchemaVersion, appVersion, buildVersion, exportedAtUtc, locale, timeZone, boards, checkIns, reminders, and settings.
@@ -511,13 +511,18 @@ All ports have deterministic fakes. Platform errors are translated once at the a
 - The confirmation explains that the file can contain private notes.
 - Generation works offline. Cancelling the share sheet is success with no product mutation.
 - Temporary files are deleted after successful handoff or on the next launch cleanup.
-- Import is not implemented.
+- Import Data accepts this app's `ripples.export` version 1 JSON and the original Ripples CSV export. The user chooses the source explicitly, reviews the detected board and check-in counts, and confirms before any write.
+- JSON restore preserves valid record ids, board order, logical dates, activity periods, reminder rules, and enabled state. Existing or tombstoned ids are skipped, so replaying the same backup is safe and never revives deleted data.
+- Restored activity periods are accepted only when every date is a real logical date, every end is on or after its start, periods do not overlap, and an open period is last. The command sorts a coherent list before replay; if any entry breaks the complete-list invariant, it discards that list and derives one safe lifetime period from the board timestamps.
+- Ripples CSV import validates the consumed schema, creates fresh ids, derives logical dates and activity periods under the current calendar policy, and skips check-ins whose source board is absent.
+- Both import sources run in one exclusive transaction through the same domain validation, mutation-stamp, sync-outbox, and widget-projection contracts as normal writes. Invalid individual records are reported as skipped, while an infrastructure failure rolls back the complete import.
+- Parsers construct normalized drafts from explicit fields and never spread, merge, or copy unknown object keys, including prototype-shaped keys. Export regressions recursively scan the actual serialized JSON key set and forbid receipts, outbox data, device data, tombstone or deletion state, mutation stamps, idempotency data, and hybrid-clock state.
 
 ### iOS Home Screen widgets
 
 - expo-widgets supplies the widget target and TypeScript/Expo UI layout. It requires the development client and a new native build.
-- The extension bundle id uses com.ramimaalouf.habittracker.ExpoWidgetsTarget unless Expo's generated target requires the equivalent documented casing.
-- The App Group is group.com.ramimaalouf.habittracker.
+- The extension bundle id uses studio.orbitlabs.habittracker.ExpoWidgetsTarget unless Expo's generated target requires the equivalent documented casing.
+- The App Group is group.studio.orbitlabs.habittracker.
 - Supported Home Screen families are systemSmall, systemMedium, systemLarge, and systemExtraLarge where the OS exposes them. Lock Screen accessory families and Live Activities are excluded.
 - Small shows one active board. Medium shows up to three. Large shows up to seven and matches screenshot 13. Extra Large shows up to twelve in two balanced columns.
 - Boards follow active home order. There is no per-widget board configuration in this release.
@@ -534,20 +539,24 @@ All ports have deterministic fakes. Platform errors are translated once at the a
 ### Private iCloud sync
 
 - Cloud sync is implemented with Apple's CloudKit private database. No custom backend or public database is introduced.
-- The container id is iCloud.com.ramimaalouf.habittracker unless the Apple Developer account requires an approved equivalent.
+- The container id is iCloud.studio.orbitlabs.habittracker unless the Apple Developer account requires an approved equivalent.
+- The custom private zone is `habit-tracker`. The local Apple module uses direct CloudKit operations behind the unchanged transport port; conditional saves preserve the greater mutation stamp across concurrent uploads.
 - Sync is off by default and is enabled from Settings after explaining that data is stored in the user's private iCloud account.
 - Local use never depends on network or iCloud availability.
 - The first enable creates a custom private zone, uploads the local outbox, fetches remote changes, and reconciles both directions.
 - Boards, board activity periods, check-ins, reminders, and metrics-education dismissal state are separate provider-neutral records. Selected icon, sync-enabled state, native schedule identifiers, widget rows, command receipts, device id, and product-link configuration never sync.
 - Each record carries schema version, entity id, field data, tombstone state, and a hybrid logical clock mutation stamp containing wall time, logical counter, and device id. Board activity periods sync as first-class records.
-- The local clock observes every remote stamp. Conflict comparison is lexicographic by wall time, logical counter, then device id.
+- The local clock observes every valid remote stamp. Conflict comparison is lexicographic by wall time, logical counter, then device id.
 - Concurrent edits to different records merge naturally. Concurrent edits to the same record use the greatest mutation stamp for the complete record. Notes are whole-field values and are not character-merged.
 - Stable ids and idempotency receipts prevent duplicate check-ins. A create and delete conflict resolves through the later mutation stamp, including tombstones.
 - Board order uses orderKey with BoardId tie-breaking. After reconciliation, order may be compacted in one explicit local mutation without changing visible order.
 - CloudKit change tokens are persisted only after all fetched records commit locally.
+- Every inbound record passes the existing branded-id, field, calendar, reminder, settings-JSON, parent-linkage, and tombstone invariants before its mutation stamp is observed or any domain row is written. An identifiable record that fails those semantics is retained in `sync_deferred` in the same transaction as the advancing page token and reports Needs Attention. A later greater valid mutation for the same entity applies and clears the quarantine. An envelope without a trustworthy entity type, stable id, or mutation stamp fails the page closed without advancing its token. Raw rejected payload details remain private and never enter UI or logs.
 - Upload is idempotent. Retry uses bounded exponential backoff with jitter and does not block local commands.
+- One app-lifetime coordinator serializes sync on startup, local mutations, and foreground return. Retry survives leaving Settings; disabling sync cancels queued network and local-commit work.
 - Sync status is Idle, Syncing, Up to Date, Offline, Signed Out, or Needs Attention. Raw CloudKit errors and account data are never shown or logged.
 - Signing out or disabling sync suspends network work and retains the complete local database. Re-enabling reconciles again.
+- A local-only SHA256 account binding lives in SQLite, never in exports or synced records. A different iCloud account is refused before uploads or fetched data are accepted. Recovery is signing back into the originally bound account; there is no silent rebind or destructive reset.
 - A remote tombstone strips user content and remains in CloudKit indefinitely so a device returning after a long offline period cannot resurrect deleted data. A local tombstone may be purged 90 days after its remote tombstone is confirmed.
 - Destructive reset of CloudKit or local data is not included.
 - The SyncAdapter has a deterministic in-memory fake for conflict, retry, token, tombstone, and out-of-order delivery tests.
@@ -602,6 +611,8 @@ All ports have deterministic fakes. Platform errors are translated once at the a
 /settings/icons
 /settings/sync
 /settings/export
+/settings/import
+/settings/timeline
 ~~~
 
 - Expo Router owns every navigation transition and deep link.
@@ -629,8 +640,9 @@ All ports have deterministic fakes. Platform errors are translated once at the a
 | 13-widgets.png | large List widget, seven board rows, strips, quick actions |
 
 - Reference status-bar time, battery, fixture date, and Dynamic Island contents are not parity targets.
-- The implementation uses deterministic seed data reproducing the seven reference board names and August 2026 activity only in development and visual tests.
-- Seed data is never inserted into a normal user's database.
+- The implementation uses deterministic seed data with seven readable demo labels and August 2026 activity only in development and visual tests. Those labels are demo copy, not claimed reconstructions of missing or obscured screenshot text.
+- The demo labels are `plan your day`, `morning pages`, `don’t overeat`, `in bed at assigned time`, `dnd until 1 focus session`, `intentional content`, and `don’t touch stash, ever`.
+- Seed data requires an explicit development-route action and an empty database. It is never auto-seeded, cannot run in a release build, and is never inserted into a normal user's existing database.
 - Dark-mode geometry, grouping, hierarchy, corner language, tinting, materials, and information density should match the references.
 - Light mode derives from the native foundation and receives its own approved baseline.
 - Exact pixel values are finalized through full-resolution simulator comparison after structural behavior is correct.
@@ -727,7 +739,7 @@ Foundation scripts remain unchanged. Product scripts supplement rather than repl
 - Generated ios/ and android/ directories remain ignored. CNG or Expo prebuild regenerates native projects.
 - Every entitlement or extension change requires a new development build.
 - CloudKit capability validation requires an Apple Developer team and a signed build.
-- Support URLs, legal URLs, release-notes URL, more-products URL, feedback URL, and App Store id are release configuration, not hardcoded inside components.
+- Support, legal, more-products, feedback, and App Store destinations are release inputs owned by `src/features/settings/release-links.ts`, not hardcoded inside components. Final values are deferred to release delivery.
 
 ## Project structure
 
@@ -736,6 +748,8 @@ src/
   app/
     _layout.tsx
     index.tsx
+    (dev)/
+      reference-august-2026.tsx
     boards/
       new.tsx
       [boardId]/
@@ -758,6 +772,8 @@ src/
       icons.tsx
       sync.tsx
       export.tsx
+      import.tsx
+      timeline.tsx
   core/
     domain/
       ids.ts
@@ -797,6 +813,8 @@ src/
     reminders/
     journal/
     settings/
+      release-links.ts
+    development/
     data-export/
   platform/
     database/
@@ -805,7 +823,6 @@ src/
     sync/
     automations/
     alternate-icons/
-    product-links/
   widgets/
     list-widget.tsx
     projections.ts
@@ -1013,7 +1030,7 @@ Stages 3 and 4 may use bounded parallel delegation after tracking core interface
 - Introduce an ORM, date library, charting library, state-management framework, backend, analytics service, or account system.
 - Change the bundle id, App Group, CloudKit container, widget extension id, minimum iOS version, signing team, or store linkage.
 - Add a second custom native module or move product behavior out of the approved module boundary.
-- Add Android product UI, native Android implementation, web support, import, watchOS, Lock Screen widgets, or Live Activities.
+- Add Android product UI, native Android implementation, web support, watchOS, Lock Screen widgets, or Live Activities.
 - Change required release URLs or app-icon inventory after human delivery.
 - Replace an approved visual baseline.
 
@@ -1075,7 +1092,7 @@ The Ripples product is complete only when all criteria below are true.
 26. The runtime log registry contains no authored warning, error, unhandled rejection, database corruption, or leaked private data.
 27. bun run lint, bun run typecheck, all focused tests, bun run test, bun run test:coverage, bun run validate, bunx expo-doctor, iOS export, Android export, and git diff --check pass.
 28. Every completed task has its Fable 5 checkpoint, independent GPT-5.6 Sol pass, required Argent evidence, isolated lowercase conventional commit, and verified push.
-29. Production release configuration contains valid HTTPS support, feedback, legal, release-notes, more-products, and App Store destinations.
+29. Production release configuration contains valid HTTPS support, feedback, legal, more-products, and App Store destinations.
 30. git ls-files contains no private reference, Argent artifact, generated native project, export file, credential, or signing asset.
 
 ## Required human-supplied release inputs
@@ -1083,7 +1100,7 @@ The Ripples product is complete only when all criteria below are true.
 These values are deployment inputs, not unresolved product behavior:
 
 - Apple Developer team with App Group, CloudKit, widget, App Intents, and alternate-icon signing access
-- Valid feedback, privacy, terms, release-notes, and more-products HTTPS URLs
+- Valid feedback, privacy, terms, and more-products HTTPS URLs
 - Final App Store id and review URL
 - Human approval of Default, Midnight, and Paper icon artwork
 - Human approval of the first light and dark full-resolution baselines

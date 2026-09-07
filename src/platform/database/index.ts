@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 import type { SqlDatabase } from '@/core/persistence/database';
 
 export const productDatabaseName = 'ripples.db';
-export const appGroupId = 'group.com.ramimaalouf.habittracker';
+export const appGroupId = 'group.studio.orbitlabs.habittracker';
 
 // the shared app group container keeps one database visible to the app and
 // the widget extension; before the entitlement exists (or off ios) the

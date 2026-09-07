@@ -377,6 +377,19 @@ export async function listDeferredRecords(tx: SqlExecutor): Promise<DeferredReco
   }));
 }
 
+export async function getDeferredMutationStamp(
+  tx: SqlExecutor,
+  entityType: string,
+  entityId: string,
+): Promise<string | null> {
+  const row = await tx.getFirstAsync<{ mutation_stamp: string }>(
+    `SELECT mutation_stamp FROM sync_deferred
+     WHERE entity_type = ? AND entity_id = ?`,
+    [entityType, entityId],
+  );
+  return row?.mutation_stamp ?? null;
+}
+
 export async function deleteDeferredRecord(
   tx: SqlExecutor,
   entityType: string,

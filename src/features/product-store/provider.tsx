@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { AppState, View } from 'react-native';
 
@@ -19,12 +19,20 @@ import { addWidgetQuickActionListener, refreshWidgets } from '@/platform/widgets
 import { addSignificantTimeChangeListener } from '@/platform/time-change';
 import { nextWidgetRefreshUtc } from '@/features/widgets/widget-props';
 import { spacing } from '@/theme';
+import { cloudKitTransport } from '@/platform/sync';
+import type { SyncTransport } from '@/core/sync/transport';
+
+import { INITIAL_SYNC, SyncCoordinator, type SyncSnapshot } from './sync-coordinator';
 
 type ProductContextValue = {
   core: ProductCore;
   version: number;
   invalidate: () => void;
   nextCommandId: () => CommandId;
+  sync: SyncSnapshot;
+  syncNow: () => void;
+  pauseSync: () => void;
+  resumeSync: () => void;
 };
 
 const ProductContext = createContext<ProductContextValue | null>(null);
@@ -39,14 +47,33 @@ type ProductProviderProps = {
   // tests inject a core over the in-memory engine; the app resolves the
   // shared sqlite core
   coreOverride?: ProductCore;
+  syncTransportOverride?: SyncTransport;
 };
 
-export function ProductProvider({ children, coreOverride }: ProductProviderProps) {
+export function ProductProvider({ children, coreOverride, syncTransportOverride }: ProductProviderProps) {
   const [state, setState] = useState<ProviderState>(
     coreOverride ? { status: 'ready', core: coreOverride } : { status: 'loading' },
   );
   const [version, setVersion] = useState(0);
   const [attempt, setAttempt] = useState(0);
+  const [sync, setSync] = useState(INITIAL_SYNC);
+  const refreshQueries = useCallback(() => setVersion((current) => current + 1), []);
+  const coordinatorRef = useRef<SyncCoordinator | null>(null);
+
+  useEffect(() => {
+    if (state.status !== 'ready') return;
+    const coordinator = new SyncCoordinator(state.core, syncTransportOverride ?? cloudKitTransport, setSync, refreshQueries);
+    coordinatorRef.current = coordinator;
+    void coordinator.request();
+    return () => {
+      coordinator.dispose();
+      coordinatorRef.current = null;
+    };
+  }, [state, refreshQueries, syncTransportOverride]);
+
+  const syncNow = useCallback(() => { void coordinatorRef.current?.request(); }, []);
+  const pauseSync = useCallback(() => { coordinatorRef.current?.pause(); }, []);
+  const resumeSync = useCallback(() => { coordinatorRef.current?.resume(); }, []);
 
   useEffect(() => {
     if (coreOverride) {
@@ -82,7 +109,10 @@ export function ProductProvider({ children, coreOverride }: ProductProviderProps
     };
   }, [coreOverride, attempt]);
 
-  const invalidate = useCallback(() => setVersion((current) => current + 1), []);
+  const invalidate = useCallback(() => {
+    refreshQueries();
+    syncNow();
+  }, [refreshQueries, syncNow]);
 
   // the reminder reconciler reruns on cold start and every return to the
   // foreground, covering permission flips, time changes, and restores
@@ -215,8 +245,12 @@ export function ProductProvider({ children, coreOverride }: ProductProviderProps
       version,
       invalidate,
       nextCommandId: () => state.core.ids.uuid() as CommandId,
+      sync,
+      syncNow,
+      pauseSync,
+      resumeSync,
     };
-  }, [state, version, invalidate]);
+  }, [state, version, invalidate, sync, syncNow, pauseSync, resumeSync]);
 
   if (state.status === 'loading') {
     return <View testID="product-loading" />;

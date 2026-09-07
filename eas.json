@@ -7,11 +7,17 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "channel": "development"
+      "channel": "development",
+      "env": {
+        "RIPPLES_CLOUDKIT_ENVIRONMENT": "Development"
+      }
     },
     "preview": {
       "distribution": "internal",
-      "channel": "preview"
+      "channel": "preview",
+      "env": {
+        "RIPPLES_CLOUDKIT_ENVIRONMENT": "Development"
+      }
     },
     "sim": {
       "distribution": "internal",
@@ -22,7 +28,10 @@
     },
     "production": {
       "autoIncrement": true,
-      "channel": "production"
+      "channel": "production",
+      "env": {
+        "RIPPLES_CLOUDKIT_ENVIRONMENT": "Production"
+      }
     }
   },
   "submit": {

@@ -1,0 +1,10 @@
+{
+  "ignore_dirs": [
+    ".artifacts",
+    "modules/ripples-apple/.build",
+    "ios",
+    "android",
+    "coverage",
+    "dist-validation"
+  ]
+}

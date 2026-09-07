@@ -2,6 +2,7 @@ import { act } from '@testing-library/react-native';
 
 import * as commands from '@/core/domain/commands';
 import { getAppSettings } from '@/core/domain/queries';
+import * as queries from '@/core/domain/queries';
 import * as icons from '@/platform/alternate-icons';
 
 import { getProductCore, resetProductCoreForTests } from '../../../src/testing/product-core.mock';
@@ -103,5 +104,21 @@ describe('alternate app icon selection', () => {
     fireEvent.press(screen.getByRole('button', { name: 'Retry app icons' }));
     await settle();
     expect(screen.getByRole('button', { name: 'Use Paper icon' })).toBeEnabled();
+  });
+
+  it('rolls back to the last confirmed selection while the settings query refresh is delayed', async () => {
+    await openIcons();
+    jest.spyOn(queries, 'getAppSettings').mockImplementation(() => new Promise(() => {}));
+    fireEvent.press(screen.getByRole('button', { name: 'Use Midnight icon' }));
+    await settle();
+    const core = await getProductCore();
+    if (!core.ok) throw new Error('core failed');
+    expect(await core.value.db.getFirstAsync('SELECT selected_icon FROM app_settings')).toEqual({ selected_icon: 'midnight' });
+    jest.spyOn(commands, 'setSelectedIcon').mockResolvedValueOnce({
+      ok: false, error: { code: 'database', message: 'injected storage failure', retryable: true },
+    });
+    fireEvent.press(screen.getByRole('button', { name: 'Use Paper icon' }));
+    await settle();
+    expect(switchIcon).toHaveBeenLastCalledWith('midnight');
   });
 });

@@ -340,7 +340,7 @@ describe('icloud sync settings', () => {
     expect(screen.getByTestId('icloud-status')).toHaveTextContent(/Off/);
     // the transport is unavailable in this build and says so
     expect(screen.getByTestId('icloud-unavailable')).toHaveTextContent(
-      /Apple Developer team/,
+      /iCloud is unavailable on this device right now/,
     );
 
     // cancelling the explanation leaves sync off

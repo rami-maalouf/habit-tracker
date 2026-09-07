@@ -83,6 +83,8 @@ const SPECS: Record<SyncEntityType, TableSpec> = {
       occurred_at_utc: null,
       time_zone_id: null,
       offset_minutes: null,
+      source: 'sync',
+      idempotency_key: null,
     },
   },
   reminder: {
@@ -149,7 +151,10 @@ export function toSyncRecord(
   const fields: Record<string, string | number | null> = {};
   for (const column of spec.columns) {
     if (deleted && column in spec.userContent) {
-      fields[column] = spec.userContent[column];
+      fields[column] =
+        entityType === 'check_in' && column === 'idempotency_key'
+          ? entityId
+          : spec.userContent[column];
       continue;
     }
     fields[column] = row[column] ?? null;

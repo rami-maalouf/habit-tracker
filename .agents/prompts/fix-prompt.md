@@ -32,7 +32,7 @@ major version) rather than trusting memory.
 - `ISSUE_NUMBER` env var: the issue to reproduce and fix.
 - `EXPO_TOKEN` is set; eas-cli picks it up automatically. Always run eas-cli
   as `npx --yes eas-cli@latest`, always with `--non-interactive`.
-- iOS bundle id: `com.ramimaalouf.habittracker`.
+- iOS bundle id: `studio.orbitlabs.habittracker`.
 - Build profile: `sim` (in `eas.json`, `ios.simulator: true`). This app has
   **no sign-in step** - it's local-first with optional iCloud sync, off by
   default - so a fresh install is immediately usable. Do not look for or
@@ -102,7 +102,7 @@ skill (see above); the shape is:
   instead of a direct source URL; the skill's troubleshooting reference has
   the current guidance).
 - Drive with `simulator:exec npx agent-device@latest <verb>`:
-  - `open com.ramimaalouf.habittracker --platform ios`
+  - `open studio.orbitlabs.habittracker --platform ios`
   - `snapshot -i` - accessibility tree with `@e1`-style refs. Run this before
     EVERY interaction; never guess what's on screen.
   - `press @eN` - tap (the verb is `press`, not `tap`)

@@ -164,6 +164,18 @@ export const migrations: readonly Migration[] = [
         WHERE id = 1 AND settings_mutation_stamp IS NOT NULL`,
     ],
   },
+  {
+    version: 5,
+    name: 'sync_account_bindings',
+    statements: [
+      // this local-only binding survives sync toggles and product deletion so
+      // an existing store can never upload one icloud account's data to another.
+      `CREATE TABLE sync_account_bindings (
+        provider TEXT PRIMARY KEY,
+        account_digest TEXT NOT NULL
+      )`,
+    ],
+  },
 ];
 
 export const latestSchemaVersion = migrations[migrations.length - 1].version;

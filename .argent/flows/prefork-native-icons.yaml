@@ -1,0 +1,99 @@
+steps:
+  - echo: Restart the new native simulator build; expect Boards.
+  - launch: studio.orbitlabs.habittracker
+  - await:
+      visible:
+        identifier: open-settings
+      timeout: 15000
+  - await:
+      idle: true
+  - echo: On Boards, open Settings.
+  - tap:
+      id: open-settings
+  - await:
+      visible:
+        text: App Icon
+      timeout: 10000
+  - await:
+      idle: true
+  - echo: On Settings, open App Icon; expect the three artwork choices.
+  - tap:
+      id: settings-app-icon
+  - await:
+      visible:
+        text: Use Midnight icon
+      timeout: 10000
+  - await:
+      idle: true
+  - tap:
+      text: Midnight icon preview
+  - tool: await-ui-element
+    args:
+      condition: visible
+      selector:
+        text: You have changed the icon
+      timeoutMs: 5000
+  - echo: iOS confirms Midnight changed. Dismiss confirmation and verify selection.
+  - tap:
+      text: OK
+  - await:
+      visible:
+        text: Use Midnight icon
+  - await:
+      idle: true
+  - echo: Midnight is selected. Change to Paper; expect iOS confirmation.
+  - tap:
+      text: Paper icon preview
+  - tool: await-ui-element
+    args:
+      condition: visible
+      selector:
+        text: You have changed the icon
+      timeoutMs: 5000
+  - tap:
+      text: OK
+  - await:
+      visible:
+        text: Use Paper icon
+  - await:
+      idle: true
+  - echo: Relaunch after changing to Paper; its selection must persist.
+  - launch: studio.orbitlabs.habittracker
+  - await:
+      visible:
+        identifier: open-settings
+      timeout: 15000
+  - await:
+      idle: true
+  - tap:
+      id: open-settings
+  - await:
+      visible:
+        identifier: settings-app-icon
+      timeout: 10000
+  - await:
+      idle: true
+  - tap:
+      id: settings-app-icon
+  - await:
+      visible:
+        text: Use Paper icon
+      timeout: 10000
+  - await:
+      idle: true
+  - echo: Paper remains selected after relaunch. Restore Default.
+  - tap:
+      text: Default icon preview
+  - tool: await-ui-element
+    args:
+      condition: visible
+      selector:
+        text: You have changed the icon
+      timeoutMs: 5000
+  - tap:
+      text: OK
+  - await:
+      visible:
+        text: Use Default icon
+  - await:
+      idle: true

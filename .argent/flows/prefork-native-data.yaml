@@ -1,0 +1,142 @@
+steps:
+  - echo: Relaunch the populated Ripples development app; expect the reference
+      boards.
+  - launch: studio.orbitlabs.habittracker
+  - await:
+      visible:
+        text: plan your day
+      timeout: 15000
+  - await:
+      idle: true
+  - echo: Open plan your day; verify its August heatmap activity.
+  - tap:
+      text: plan your day
+  - await:
+      visible:
+        id: edit-board
+      timeout: 10000
+  - await:
+      idle: true
+  - await:
+      visible:
+        text: 2026-08-17, 1 check-ins
+      timeout: 10000
+  - await:
+      visible:
+        text: 2026-08-30, 1 check-ins
+      timeout: 10000
+  - tap:
+      id: BackButton
+  - await:
+      visible:
+        text: plan your day
+      timeout: 10000
+  - await:
+      idle: true
+  - await:
+      visible:
+        text: morning pages
+      timeout: 10000
+  - await:
+      visible:
+        text: don’t overeat
+      timeout: 10000
+  - await:
+      visible:
+        text: in bed at assigned time
+      timeout: 10000
+  - await:
+      visible:
+        text: dnd until 1 focus session
+      timeout: 10000
+  - await:
+      visible:
+        text: intentional content
+      timeout: 10000
+  - await:
+      visible:
+        text: don’t touch stash, ever
+      timeout: 10000
+  - tap:
+      id: open-settings
+  - await:
+      visible:
+        text: iCloud Sync
+      timeout: 10000
+  - await:
+      idle: true
+  - tap:
+      id: settings-icloud
+  - await:
+      visible:
+        id: icloud-toggle
+      timeout: 10000
+  - await:
+      idle: true
+  - tap:
+      id: icloud-toggle
+  - tool: await-ui-element
+    args:
+      selector:
+        text: Turn on iCloud Sync?
+      condition: visible
+      timeoutMs: 10000
+  - tap:
+      text: Turn On
+      role: button
+  - await:
+      visible:
+        id: icloud-toggle
+      timeout: 10000
+  - await:
+      idle: true
+  - await:
+      visible:
+        text: Signed Out
+        within:
+          id: icloud-status
+      timeout: 15000
+  - assert:
+      visible:
+        text: "89"
+        within:
+          id: icloud-pending
+  - echo: Confirmed Signed Out with 89 queued changes; turn sync off and preserve
+      local reference data
+  - tap:
+      id: icloud-toggle
+  - await:
+      hidden:
+        id: icloud-sync-now
+      timeout: 10000
+  - launch: studio.orbitlabs.habittracker
+  - await:
+      visible:
+        text: plan your day
+      timeout: 15000
+  - await:
+      idle: true
+  - await:
+      visible:
+        text: morning pages
+      timeout: 15000
+  - await:
+      visible:
+        text: don’t overeat
+      timeout: 15000
+  - await:
+      visible:
+        text: in bed at assigned time
+      timeout: 15000
+  - await:
+      visible:
+        text: dnd until 1 focus session
+      timeout: 15000
+  - await:
+      visible:
+        text: intentional content
+      timeout: 15000
+  - await:
+      visible:
+        text: don’t touch stash, ever
+      timeout: 15000

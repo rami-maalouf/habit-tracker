@@ -10,22 +10,12 @@
     "ios": {
       "supportsTablet": true,
       "deploymentTarget": "18.6",
-      "bundleIdentifier": "com.ramimaalouf.habittracker",
+      "bundleIdentifier": "studio.orbitlabs.habittracker",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleDisplayName": "Ripples"
       },
-      "entitlements": {
-        "com.apple.security.application-groups": [
-          "group.com.ramimaalouf.habittracker"
-        ],
-        "com.apple.developer.icloud-container-identifiers": [
-          "iCloud.com.ramimaalouf.habittracker"
-        ],
-        "com.apple.developer.icloud-services": [
-          "CloudKit"
-        ],
-        "com.apple.developer.ubiquity-kvstore-identifier": "$(TeamIdentifierPrefix)com.ramimaalouf.habittracker"
-      }
+      "appleTeamId": "3V2UU7RRK9"
     },
     "android": {
       "adaptiveIcon": {
@@ -58,7 +48,7 @@
       [
         "expo-widgets",
         {
-          "groupIdentifier": "group.com.ramimaalouf.habittracker",
+          "groupIdentifier": "group.studio.orbitlabs.habittracker",
           "widgets": [
             {
               "name": "RipplesBoards",
@@ -74,7 +64,8 @@
           ]
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "./modules/ripples-apple/plugin"
     ],
     "experiments": {
       "typedRoutes": true

@@ -52,3 +52,7 @@ ripples-export-*.csv
 
 # test output
 coverage/
+
+# local swift package build output
+/modules/ripples-apple/.build/
+/modules/ripples-apple/.swiftpm/

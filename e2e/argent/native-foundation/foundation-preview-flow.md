@@ -2,7 +2,7 @@
 
 Semantic flow definition for the `native-foundation` module. Steps use semantic targets discovered at run time; coordinates are never stored.
 
-Target: the approved simulator recorded in `checkpoints.md` (iPhone 17 Pro, iOS 27.0). App: `com.ramimaalouf.habittracker` development client with Metro running.
+Target: the approved simulator recorded in `checkpoints.md` (iPhone 17 Pro, iOS 27.0). App: `studio.orbitlabs.habittracker` development client with Metro running.
 
 ## Flow: preview structural and interaction checkpoint
 

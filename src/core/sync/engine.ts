@@ -6,6 +6,7 @@ import { rebuildWidgetRows } from '../persistence/projections/widget-rows';
 import {
   deleteDeferredRecord,
   deleteOutboxRows,
+  getDeferredMutationStamp,
   getSettings,
   getSyncState,
   listDeferredRecords,
@@ -16,6 +17,7 @@ import {
   saveSyncState,
 } from '../persistence/repositories/support';
 import { observe } from './hybrid-clock';
+import { validateInboundRecord } from './inbound-validation';
 import {
   SETTINGS_ENTITY_ID,
   parsePeriodEntityId,
@@ -48,7 +50,17 @@ export type SyncDeps = {
   transport: SyncTransport;
   // deterministic in tests; Math.random in the app
   random: () => number;
+  // a coordinator generation guard; false cancels without retry metadata
+  shouldContinue?: () => boolean;
 };
+
+class SyncCancelled extends Error {}
+
+function checkpoint(deps: SyncDeps): void {
+  if (deps.shouldContinue?.() === false) {
+    throw new SyncCancelled();
+  }
+}
 
 // bounded exponential backoff with jitter; retries never block local
 // commands because the engine only ever runs outside them
@@ -132,10 +144,10 @@ async function localStampFor(
     return { exists: row !== null, stamp: row?.mutation_stamp ?? null, localId: '1' };
   }
   if (record.entityType === 'activity_period') {
-    const parsed = parsePeriodEntityId(record.entityId);
-    if (!parsed) {
-      return { exists: false, stamp: null, localId: null };
-    }
+    const parsed = parsePeriodEntityId(record.entityId) as {
+      boardId: string;
+      startDate: string;
+    };
     const row = await tx.getFirstAsync<{ id: number; mutation_stamp: string }>(
       'SELECT id, mutation_stamp FROM board_activity_periods WHERE board_id = ? AND start_date = ?',
       [parsed.boardId, parsed.startDate],
@@ -174,9 +186,7 @@ async function applyRecord(
     await tx.runAsync(
       'UPDATE app_settings SET metrics_education_dismissed = ?, settings_mutation_stamp = ? WHERE id = 1',
       [
-        typeof record.fields.metrics_education_dismissed === 'string'
-          ? record.fields.metrics_education_dismissed
-          : '[]',
+        record.fields.metrics_education_dismissed as string,
         record.mutationStamp,
       ],
     );
@@ -196,10 +206,10 @@ async function applyRecord(
   );
 
   if (record.entityType === 'activity_period') {
-    const parsed = parsePeriodEntityId(record.entityId);
-    if (!parsed) {
-      return false;
-    }
+    const parsed = parsePeriodEntityId(record.entityId) as {
+      boardId: string;
+      startDate: string;
+    };
     if (local.exists) {
       await tx.runAsync(
         `UPDATE board_activity_periods SET end_date = ?, deleted_at = ?, mutation_stamp = ?
@@ -232,10 +242,19 @@ async function applyRecord(
   }
 
   const insertColumns = [spec.idColumn, ...columns, 'mutation_stamp'];
+  const insertValues: (string | number | null)[] = [
+    record.entityId,
+    ...values,
+    record.mutationStamp,
+  ];
+  if (record.entityType === 'reminder') {
+    insertColumns.push('schedule_state', 'last_schedule_error');
+    insertValues.push('idle', null);
+  }
   const placeholders = insertColumns.map(() => '?').join(', ');
   await tx.runAsync(
     `INSERT INTO ${spec.table} (${insertColumns.join(', ')}) VALUES (${placeholders})`,
-    [record.entityId, ...values, record.mutationStamp],
+    insertValues,
   );
   return true;
 }
@@ -262,41 +281,79 @@ async function applyWithDeferral(
   record: SyncRecord,
   now: number,
 ): Promise<boolean> {
-  try {
-    const applied = await applyRecord(tx, record, now);
-    await deleteDeferredRecord(tx, record.entityType, record.entityId);
-    return applied;
-  } catch {
-    await saveDeferredRecord(tx, {
-      entityType: record.entityType,
-      entityId: record.entityId,
-      mutationStamp: record.mutationStamp,
-      payload: JSON.stringify(record),
-      firstSeenAt: now,
-    });
+  const deferredStamp = await getDeferredMutationStamp(tx, record.entityType, record.entityId);
+  if (deferredStamp !== null && deferredStamp > record.mutationStamp) {
     return false;
   }
+  const applied = await applyRecord(tx, record, now);
+  await deleteDeferredRecord(tx, record.entityType, record.entityId);
+  return applied;
+}
+
+async function deferRecord(tx: SqlExecutor, record: SyncRecord, now: number): Promise<void> {
+  const local = await localStampFor(tx, record);
+  const deferredStamp = await getDeferredMutationStamp(tx, record.entityType, record.entityId);
+  if (local.stamp !== null && local.stamp >= record.mutationStamp) {
+    if (deferredStamp === null || local.stamp >= deferredStamp) {
+      await deleteDeferredRecord(tx, record.entityType, record.entityId);
+    }
+    return;
+  }
+  if (deferredStamp !== null && deferredStamp >= record.mutationStamp) {
+    return;
+  }
+  await saveDeferredRecord(tx, {
+    entityType: record.entityType,
+    entityId: record.entityId,
+    mutationStamp: record.mutationStamp,
+    payload: JSON.stringify(record),
+    firstSeenAt: now,
+  });
+}
+
+async function validateAndApply(
+  tx: SqlExecutor,
+  value: unknown,
+  now: number,
+): Promise<{ applied: boolean; observedStamp: string | null }> {
+  const validation = await validateInboundRecord(tx, value);
+  if (validation.kind === 'unidentifiable') {
+    throw new Error('invalid sync envelope');
+  }
+  if (validation.kind === 'invalid' || validation.kind === 'deferred') {
+    await deferRecord(tx, validation.record, now);
+    return { applied: false, observedStamp: null };
+  }
+  return {
+    applied: await applyWithDeferral(tx, validation.record, now),
+    observedStamp: validation.record.mutationStamp,
+  };
 }
 
 // deferred records are retried after each page, so a parent that arrived
 // either earlier or in that same page unblocks its dependents
-async function drainDeferred(tx: SqlExecutor, now: number): Promise<number> {
+async function drainDeferred(
+  tx: SqlExecutor,
+  now: number,
+  hlc: { wallTime: number; counter: number },
+): Promise<{ applied: number; hlc: { wallTime: number; counter: number } }> {
   let applied = 0;
   for (const row of await listDeferredRecords(tx)) {
-    let record: SyncRecord;
+    let record: unknown;
     try {
-      record = JSON.parse(row.payload) as SyncRecord;
+      record = JSON.parse(row.payload);
     } catch {
-      // an unreadable payload can never be applied; drop it rather than
-      // retrying it on every pass forever
-      await deleteDeferredRecord(tx, row.entityType, row.entityId);
       continue;
     }
-    if (await applyWithDeferral(tx, record, now)) {
+    const result = await validateAndApply(tx, record, now);
+    if (result.observedStamp !== null) {
+      hlc = observe(hlc, result.observedStamp);
+    }
+    if (result.applied) {
       applied += 1;
     }
   }
-  return applied;
+  return { applied, hlc };
 }
 
 // --- run ----------------------------------------------------------------------
@@ -305,6 +362,11 @@ async function drainDeferred(tx: SqlExecutor, now: number): Promise<number> {
 // token is persisted only after every fetched record in that page commits.
 export function runSync(deps: SyncDeps): Promise<DomainResult<SyncOutcome>> {
   return (async () => {
+    try {
+      checkpoint(deps);
+    } catch {
+      return ok({ status: 'idle' as SyncStatus, uploaded: 0, applied: 0, retryAfterMs: null });
+    }
     const now = deps.clock.nowUtcMs();
     const timeZoneId = deps.clock.timeZoneId();
 
@@ -326,33 +388,45 @@ export function runSync(deps: SyncDeps): Promise<DomainResult<SyncOutcome>> {
 
     try {
       if (!preflight.state.zoneCreated) {
+        checkpoint(deps);
         await deps.transport.ensureZone();
+        checkpoint(deps);
         await deps.db.withExclusiveTransactionAsync(async (tx) => {
+          checkpoint(deps);
           await saveSyncState(tx, { ...(await getSyncState(tx)), zoneCreated: true });
+          checkpoint(deps);
         });
       }
 
       // upload in batches until the outbox drains; each batch clears only
       // its own rows, so an interrupted run never loses a mutation
       for (;;) {
+        checkpoint(deps);
         const batch = await deps.db.withTransactionAsync((tx) => collectUpload(tx));
         if (batch.outboxIds.length === 0) {
           break;
         }
         if (batch.records.length > 0) {
+          checkpoint(deps);
           await deps.transport.upload(batch.records);
+          checkpoint(deps);
           uploaded += batch.records.length;
         }
         await deps.db.withExclusiveTransactionAsync(async (tx) => {
+          checkpoint(deps);
           await deleteOutboxRows(tx, batch.outboxIds);
+          checkpoint(deps);
         });
       }
 
       let token = preflight.state.changeToken;
       for (;;) {
+        checkpoint(deps);
         const page: FetchPage = await deps.transport.fetchChanges(token);
+        checkpoint(deps);
         if (page.records.length > 0) {
           const committed = await deps.db.withExclusiveTransactionAsync(async (tx) => {
+            checkpoint(deps);
             // the preflight proved the settings row exists
             const settings = (await getSettings(tx)) as NonNullable<
               Awaited<ReturnType<typeof getSettings>>
@@ -360,16 +434,19 @@ export function runSync(deps: SyncDeps): Promise<DomainResult<SyncOutcome>> {
             let hlc = { wallTime: settings.hlcWallTime, counter: settings.hlcCounter };
             let count = 0;
             for (const record of applyOrder(page.records)) {
-              // the local clock observes every remote stamp, so later local
-              // mutations sort after everything already seen
-              hlc = observe(hlc, record.mutationStamp);
-              if (await applyWithDeferral(tx, record, now)) {
+              const result = await validateAndApply(tx, record, now);
+              if (result.observedStamp !== null) {
+                hlc = observe(hlc, result.observedStamp);
+              }
+              if (result.applied) {
                 count += 1;
               }
             }
             // draining after the page lets a parent that arrived in this
             // very page unblock the dependents waiting on it
-            count += await drainDeferred(tx, now);
+            const drained = await drainDeferred(tx, now, hlc);
+            count += drained.applied;
+            hlc = drained.hlc;
             await saveHlc(tx, hlc);
             await rebuildWidgetRows(tx, now, timeZoneId);
             // the token lands in the same commit as its records
@@ -377,6 +454,7 @@ export function runSync(deps: SyncDeps): Promise<DomainResult<SyncOutcome>> {
               ...(await getSyncState(tx)),
               changeToken: page.nextToken,
             });
+            checkpoint(deps);
             return count;
           });
           applied += committed;
@@ -384,12 +462,22 @@ export function runSync(deps: SyncDeps): Promise<DomainResult<SyncOutcome>> {
           // an empty page still gives deferred records a chance, and its
           // token still advances
           const drained = await deps.db.withExclusiveTransactionAsync(async (tx) => {
-            const count = await drainDeferred(tx, now);
-            if (count > 0) {
+            checkpoint(deps);
+            const settings = (await getSettings(tx)) as NonNullable<
+              Awaited<ReturnType<typeof getSettings>>
+            >;
+            const result = await drainDeferred(
+              tx,
+              now,
+              { wallTime: settings.hlcWallTime, counter: settings.hlcCounter },
+            );
+            if (result.applied > 0) {
               await rebuildWidgetRows(tx, now, timeZoneId);
             }
+            await saveHlc(tx, result.hlc);
             await saveSyncState(tx, { ...(await getSyncState(tx)), changeToken: page.nextToken });
-            return count;
+            checkpoint(deps);
+            return result.applied;
           });
           applied += drained;
         }
@@ -399,23 +487,48 @@ export function runSync(deps: SyncDeps): Promise<DomainResult<SyncOutcome>> {
         }
       }
 
+      let unresolved = false;
       await deps.db.withExclusiveTransactionAsync(async (tx) => {
+        checkpoint(deps);
+        unresolved = (await listDeferredRecords(tx)).length > 0;
         await saveSyncState(tx, {
           ...(await getSyncState(tx)),
           retryState: null,
           lastSuccessAtUtc: now,
         });
+        checkpoint(deps);
       });
-      return ok({ status: 'up_to_date' as SyncStatus, uploaded, applied, retryAfterMs: null });
+      checkpoint(deps);
+      return ok({
+        status: (unresolved ? 'needs_attention' : 'up_to_date') as SyncStatus,
+        uploaded,
+        applied,
+        retryAfterMs: null,
+      });
     } catch (cause) {
+      if (cause instanceof SyncCancelled) {
+        return ok({ status: 'idle' as SyncStatus, uploaded, applied, retryAfterMs: null });
+      }
+      if (deps.shouldContinue?.() === false) {
+        return ok({ status: 'idle' as SyncStatus, uploaded, applied, retryAfterMs: null });
+      }
       const attempt = retry.attempt + 1;
       const retryAfterMs = retryDelayMs(attempt, deps.random);
-      await deps.db.withExclusiveTransactionAsync(async (tx) => {
-        await saveSyncState(tx, {
-          ...(await getSyncState(tx)),
-          retryState: JSON.stringify({ attempt }),
+      try {
+        await deps.db.withExclusiveTransactionAsync(async (tx) => {
+          checkpoint(deps);
+          await saveSyncState(tx, {
+            ...(await getSyncState(tx)),
+            retryState: JSON.stringify({ attempt }),
+          });
+          checkpoint(deps);
         });
-      });
+      } catch (retryCause) {
+        if (retryCause instanceof SyncCancelled) {
+          return ok({ status: 'idle' as SyncStatus, uploaded, applied, retryAfterMs: null });
+        }
+        throw retryCause;
+      }
       // raw provider errors and account data never reach the ui or logs
       return ok({ status: statusForFailure(cause), uploaded, applied, retryAfterMs });
     }

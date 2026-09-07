@@ -1,3 +1,5 @@
+import { createBoard, deleteBoard, setICloudSyncEnabled } from '@/core/domain/commands';
+import { getExportSnapshot } from '@/core/export/serialize';
 import { migrateDatabase, migrationChecksum } from '@/core/persistence/migrations';
 import { latestSchemaVersion, migrations } from '@/core/persistence/schema';
 
@@ -24,6 +26,7 @@ describe('migrations', () => {
       'app_settings',
       'mutation_outbox',
       'sync_state',
+      'sync_account_bindings',
       'command_receipts',
       'schema_migrations',
     ]) {
@@ -116,6 +119,73 @@ describe('migrations', () => {
     const checksum = migrationChecksum(migrations[0]);
     expect(checksum).toBe(migrationChecksum(migrations[0]));
     expect(checksum).toHaveLength(8);
+  });
+});
+
+describe('cloudkit account binding migration', () => {
+  it('keeps the local binding through sync toggles and board deletion without exporting or enqueuing it', async () => {
+    const { db, deps, ids } = await createTestHarness();
+    const binding = { provider: 'iCloud.studio.orbitlabs.habittracker', account_digest: 'private-account-digest' };
+    await db.runAsync('INSERT INTO sync_account_bindings VALUES (?, ?)', [binding.provider, binding.account_digest]);
+    const created = await createBoard(deps, {
+      commandId: ids.nextCommandId(), title: 'test board', symbol: 'star.fill', accentHex: '#78D98B',
+      usesTintedBackground: false, tracksAmount: false, tracksTime: false, startOfDayMinute: 0,
+      metricsEnabled: true,
+    });
+    if (!created.ok) throw new Error(created.error.message);
+    for (const enabled of [true, false, true]) {
+      expect((await setICloudSyncEnabled(deps, { commandId: ids.nextCommandId(), enabled })).ok).toBe(true);
+    }
+    expect((await deleteBoard(deps, { commandId: ids.nextCommandId(), boardId: created.value.boardId })).ok).toBe(true);
+    expect(await db.getAllAsync('SELECT * FROM sync_account_bindings')).toEqual([binding]);
+    const exported = await getExportSnapshot(deps, {
+      appVersion: '1.0.0', buildVersion: '1', databaseSchemaVersion: latestSchemaVersion, locale: 'en',
+    });
+    expect(exported.ok).toBe(true);
+    expect(JSON.stringify(exported)).not.toContain(binding.account_digest);
+    expect(JSON.stringify(exported)).not.toContain('sync_account_bindings');
+    const outbox = await db.getAllAsync('SELECT * FROM mutation_outbox');
+    expect(JSON.stringify(outbox)).not.toContain(binding.account_digest);
+    expect(JSON.stringify(outbox)).not.toContain('sync_account_bindings');
+    await db.closeAsync();
+  });
+
+  it('upgrades an existing store without changing its product rows or sync cursor', async () => {
+    const db = new NodeSqlDatabase();
+    await db.runAsync(`CREATE TABLE schema_migrations (
+      version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at INTEGER NOT NULL
+    )`);
+    for (const migration of migrations.filter((entry) => entry.version <= 4)) {
+      for (const statement of migration.statements) await db.runAsync(statement);
+      await db.runAsync('INSERT INTO schema_migrations VALUES (?, ?, ?, 0)', [
+        migration.version, migration.name, migrationChecksum(migration),
+      ]);
+    }
+    await db.runAsync('PRAGMA user_version = 4');
+    await db.runAsync("INSERT INTO app_settings (id, schema_revision, device_id) VALUES (1, 4, 'existing-device')");
+    await db.runAsync("INSERT INTO sync_state (id, change_token, zone_created) VALUES (1, 'existing-token', 1)");
+    const settings = await db.getAllAsync('SELECT * FROM app_settings');
+    const sync = await db.getAllAsync('SELECT * FROM sync_state');
+    expect(await migrateDatabase(db)).toEqual({ ok: true, value: latestSchemaVersion });
+    expect(await db.getAllAsync('SELECT * FROM app_settings')).toEqual(settings);
+    expect(await db.getAllAsync('SELECT * FROM sync_state')).toEqual(sync);
+    expect(await db.getAllAsync('SELECT * FROM sync_account_bindings')).toEqual([]);
+    const columns = await db.getAllAsync<{ name: string; pk: number; notnull: number }>(
+      'PRAGMA table_info(sync_account_bindings)',
+    );
+    expect(columns.map(({ name }) => name)).toEqual(['provider', 'account_digest']);
+    expect(columns[0].pk).toBe(1);
+    expect(columns[1].notnull).toBe(1);
+    await db.runAsync('INSERT INTO sync_account_bindings VALUES (?, ?)', ['iCloud.studio.orbitlabs.habittracker', 'digest-a']);
+    await expect(db.runAsync('INSERT INTO sync_account_bindings VALUES (?, ?)', [
+      'iCloud.studio.orbitlabs.habittracker', 'digest-b',
+    ])).rejects.toThrow();
+    await migrateDatabase(db);
+    expect(await db.getAllAsync('SELECT * FROM sync_account_bindings')).toEqual([
+      { provider: 'iCloud.studio.orbitlabs.habittracker', account_digest: 'digest-a' },
+    ]);
+    expect(await db.getAllAsync('SELECT * FROM mutation_outbox')).toEqual([]);
+    await db.closeAsync();
   });
 });
 

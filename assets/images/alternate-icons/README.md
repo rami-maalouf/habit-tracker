@@ -1,12 +1,18 @@
-# Alternate icon artwork drafts
+# Ripples icon artwork
 
-Midnight and Paper were generated for the pre-fork request on 2026-09-07.
-Both are opaque 1254 by 1254 PNG source images using a concentric ripple motif.
-These are reviewable drafts, awaiting visual approval.
+Generated on 2026-09-07 for the approved cartoon, glossy plastic direction.
+The three square source images are opaque PNGs. Expo prepares the primary
+icon; the local Apple config plugin prepares universal 1024px alternate
+app icon sets and registers them through Xcode's asset compiler.
 
-They are not registered as alternate app icons or used by the application yet.
-After approval, the native asset-catalog integration must prepare the required
-icon sizes from these sources and verify switching, rollback, and persistence.
+- `../icon.png`: a friendly mint droplet inside chunky aqua ripple rings.
+- `midnight.png`: the same character in turquoise and cobalt on midnight navy.
+- `paper.png`: peach and sage on warm cream.
 
-- `midnight.png`: mint ripples on a dark background.
-- `paper.png`: dark ripples on an off-white background.
+Generation prompt: a single friendly water droplet, rounded like a polished
+vinyl toy, bobbing at the center of two thick soft ripple rings; dot eyes,
+a small happy smile, strong silhouette, smooth glossy plastic highlights,
+slightly elevated viewpoint, centered square composition, no text, no border,
+no baked-in rounded-square mask. The two alternates were generated as edits
+of the primary image, preserving the character and composition while changing
+only the palette and background.

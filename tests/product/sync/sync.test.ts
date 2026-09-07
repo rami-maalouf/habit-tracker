@@ -326,7 +326,7 @@ describe('sync engine', () => {
     for (let index = 0; index < 3; index += 1) {
       transport.seedRemote(
         remoteBoard({
-          id: `00000000-0000-4000-8000-00000000f${index}0`,
+          id: `00000000-0000-4000-8000-000000000f${index}0`,
           stamp: `0000000000000${index + 1}-00001-other`,
           title: `paged ${index}`,
         }),
@@ -514,7 +514,7 @@ describe('sync engine edges', () => {
     await harness.db.closeAsync();
   });
 
-  it('updates an existing period from a remote record and ignores a malformed id', async () => {
+  it('fails a page closed when an otherwise valid change contains an unidentifiable id', async () => {
     const { harness, transport, deps } = await setup();
     const boardId = await createBoardForTest(harness);
     await runSync(deps);
@@ -539,7 +539,7 @@ describe('sync engine edges', () => {
         deleted_at: null,
       },
     });
-    // a malformed period id is skipped rather than corrupting state
+    // an unidentifiable record prevents the page token and its siblings from committing
     transport.seedRemote({
       schemaVersion: SYNC_SCHEMA_VERSION,
       entityType: 'activity_period',
@@ -549,18 +549,18 @@ describe('sync engine edges', () => {
       fields: { board_id: boardId, start_date: '2026-08-05', end_date: null, deleted_at: null },
     });
     const result = await runSync(deps);
-    expect(result.ok && result.value.applied).toBe(1);
+    expect(result.ok && result.value.status).toBe('needs_attention');
     const closed = await harness.db.getFirstAsync<{ end_date: string | null }>(
       'SELECT end_date FROM board_activity_periods WHERE board_id = ?',
       [boardId],
     );
-    expect(closed?.end_date).toBe('2026-08-30');
+    expect(closed?.end_date).toBeNull();
     const count = await harness.db.getAllAsync('SELECT id FROM board_activity_periods');
     expect(count).toHaveLength(1);
     await harness.db.closeAsync();
   });
 
-  it('defaults a malformed remote settings payload to an empty list', async () => {
+  it('quarantines malformed settings without corrupting the stored JSON', async () => {
     const { harness, transport, deps } = await setup();
     transport.seedRemote({
       schemaVersion: SYNC_SCHEMA_VERSION,
@@ -571,7 +571,8 @@ describe('sync engine edges', () => {
       fields: { metrics_education_dismissed: 42 },
     });
     const result = await runSync(deps);
-    expect(result.ok && result.value.applied).toBe(1);
+    expect(result.ok && result.value.status).toBe('needs_attention');
+    expect(result.ok && result.value.applied).toBe(0);
     const dismissed = await getMetricsEducationDismissed(harness.deps);
     expect(dismissed.ok && dismissed.value).toEqual([]);
     await harness.db.closeAsync();
@@ -704,7 +705,7 @@ describe('sync engine edges', () => {
       throw new Error(first.error.message);
     }
     // the page still committed and its token advanced
-    expect(first.value.status).toBe('up_to_date');
+    expect(first.value.status).toBe('needs_attention');
     expect(first.value.applied).toBe(0);
     const deferred = await harness.db.getAllAsync('SELECT entity_id FROM sync_deferred');
     expect(deferred).toHaveLength(1);
@@ -780,17 +781,509 @@ describe('sync engine edges', () => {
     await harness.db.closeAsync();
   });
 
-  it('drops a deferred record whose payload cannot be read', async () => {
+  it('retains a deferred record whose payload cannot be read', async () => {
     const { harness, deps } = await setup();
     await harness.db.runAsync(
       `INSERT INTO sync_deferred (entity_type, entity_id, mutation_stamp, payload, first_seen_at)
        VALUES ('check_in', 'broken', 's', 'not json', 1)`,
     );
     const result = await runSync(deps);
-    expect(result.ok && result.value.status).toBe('up_to_date');
+    expect(result.ok && result.value.status).toBe('needs_attention');
+    const remaining = await harness.db.getAllAsync('SELECT entity_id FROM sync_deferred');
+    expect(remaining).toHaveLength(1);
+    await harness.db.closeAsync();
+  });
+
+  it('advances past a quarantined setting and clears it after a corrected mutation', async () => {
+    const { harness, transport, deps } = await setup();
+    const boardId = '00000000-0000-4000-8000-0000000000a1';
+    transport.seedRemote({
+      schemaVersion: SYNC_SCHEMA_VERSION,
+      entityType: 'settings',
+      entityId: 'app-settings',
+      mutationStamp: '99999999999998-00001-other',
+      deleted: false,
+      fields: { metrics_education_dismissed: 'not json' },
+    });
+    const first = await runSync(deps);
+    expect(first.ok && first.value.status).toBe('needs_attention');
+    const quarantined = await harness.db.getFirstAsync<{
+      change_token: string;
+      retry_state: string | null;
+    }>(
+      `SELECT s.change_token, s.retry_state
+         FROM sync_state s`,
+    );
+    expect(quarantined).toEqual({ change_token: '1', retry_state: null });
+    const clock = await harness.db.getFirstAsync<{ hlc_wall_time: number }>(
+      'SELECT hlc_wall_time FROM app_settings WHERE id = 1',
+    );
+    expect(clock?.hlc_wall_time).not.toBe(99999999999998);
+
+    transport.seedRemote({
+      schemaVersion: SYNC_SCHEMA_VERSION,
+      entityType: 'settings',
+      entityId: 'app-settings',
+      mutationStamp: '99999999999999-00001-other',
+      deleted: false,
+      fields: { metrics_education_dismissed: JSON.stringify([boardId, boardId.toUpperCase()]) },
+    });
+    const second = await runSync(deps);
+    expect(second.ok && second.value.status).toBe('up_to_date');
+    const dismissed = await getMetricsEducationDismissed(harness.deps);
+    expect(dismissed.ok && dismissed.value).toEqual([boardId, boardId.toUpperCase()]);
     const remaining = await harness.db.getAllAsync('SELECT entity_id FROM sync_deferred');
     expect(remaining).toHaveLength(0);
     await harness.db.closeAsync();
+  });
+
+  it('quarantines invalid board, period, check-in, and reminder fields', async () => {
+    const { harness, transport, deps } = await setup();
+    const boardId = await createBoardForTest(harness, {
+      tracksAmount: false,
+      tracksTime: false,
+    });
+    await runSync(deps);
+    transport.seedRemote(
+      remoteBoard({
+        id: '00000000-0000-4000-8000-0000000000b7',
+        stamp: '99999999999999-00001-other',
+        title: '   ',
+      }),
+    );
+    transport.seedRemote({
+      schemaVersion: SYNC_SCHEMA_VERSION,
+      entityType: 'activity_period',
+      entityId: periodEntityId(boardId, '2026-08-20'),
+      mutationStamp: '99999999999999-00002-other',
+      deleted: false,
+      fields: {
+        board_id: boardId,
+        start_date: '2026-08-20',
+        end_date: '2026-08-19',
+        deleted_at: null,
+      },
+    });
+    transport.seedRemote({
+      schemaVersion: SYNC_SCHEMA_VERSION,
+      entityType: 'check_in',
+      entityId: '00000000-0000-4000-8000-0000000000c7',
+      mutationStamp: '99999999999999-00003-other',
+      deleted: false,
+      fields: {
+        id: '00000000-0000-4000-8000-0000000000c7',
+        board_id: boardId,
+        logical_date: '2026-08-20',
+        occurred_at_utc: null,
+        time_zone_id: null,
+        offset_minutes: null,
+        amount: 3,
+        note: null,
+        source: 'unknown',
+        idempotency_key: '00000000-0000-4000-8000-0000000000c8',
+        created_at: 1,
+        updated_at: 2,
+        deleted_at: null,
+      },
+    });
+    transport.seedRemote({
+      schemaVersion: SYNC_SCHEMA_VERSION,
+      entityType: 'reminder',
+      entityId: '00000000-0000-4000-8000-0000000000d7',
+      mutationStamp: '99999999999999-00004-other',
+      deleted: false,
+      fields: {
+        id: '00000000-0000-4000-8000-0000000000d7',
+        board_id: boardId,
+        weekdays_mask: 1,
+        minute_of_day: 1440,
+        message: null,
+        enabled: 1,
+        created_at: 1,
+        updated_at: 2,
+        deleted_at: null,
+      },
+    });
+    const result = await runSync(deps);
+    expect(result.ok && result.value.status).toBe('needs_attention');
+    const deferred = await harness.db.getAllAsync<{ entity_type: string }>(
+      'SELECT entity_type FROM sync_deferred ORDER BY entity_type',
+    );
+    expect(deferred.map((row) => row.entity_type)).toEqual([
+      'activity_period',
+      'board',
+      'check_in',
+      'reminder',
+    ]);
+    expect(
+      await harness.db.getFirstAsync('SELECT id FROM check_ins WHERE id = ?', [
+        '00000000-0000-4000-8000-0000000000c7',
+      ]),
+    ).toBeNull();
+    await harness.db.closeAsync();
+  });
+
+  it('inserts a valid remote reminder with device-local schedule state', async () => {
+    const { harness, transport, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    await runSync(deps);
+    const reminderId = '00000000-0000-4000-8000-0000000000d8';
+    transport.seedRemote({
+      schemaVersion: SYNC_SCHEMA_VERSION,
+      entityType: 'reminder',
+      entityId: reminderId,
+      mutationStamp: '99999999999999-00001-other',
+      deleted: false,
+      fields: {
+        id: reminderId,
+        board_id: boardId,
+        weekdays_mask: 62,
+        minute_of_day: 480,
+        message: '  move  ',
+        enabled: 1,
+        created_at: 1,
+        updated_at: 2,
+        deleted_at: null,
+      },
+    });
+    const result = await runSync(deps);
+    expect(result.ok && result.value.status).toBe('up_to_date');
+    const row = await harness.db.getFirstAsync<{
+      message: string;
+      schedule_state: string;
+      last_schedule_error: string | null;
+    }>('SELECT message, schedule_state, last_schedule_error FROM reminders WHERE id = ?', [
+      reminderId,
+    ]);
+    expect(row).toEqual({ message: 'move', schedule_state: 'idle', last_schedule_error: null });
+    await harness.db.closeAsync();
+  });
+
+  it('retains historical amount and time after the board disables those inputs', async () => {
+    const { harness, transport, deps } = await setup();
+    const boardId = await createBoardForTest(harness, {
+      tracksAmount: false,
+      tracksTime: false,
+    });
+    await runSync(deps);
+    const checkInId = '00000000-0000-4000-8000-0000000000c9';
+    transport.seedRemote({
+      schemaVersion: SYNC_SCHEMA_VERSION,
+      entityType: 'check_in',
+      entityId: checkInId,
+      mutationStamp: '99999999999999-00001-other',
+      deleted: false,
+      fields: {
+        id: checkInId,
+        board_id: boardId,
+        logical_date: '2026-08-20',
+        occurred_at_utc: Date.UTC(2026, 7, 20, 12),
+        time_zone_id: 'America/Toronto',
+        offset_minutes: -240,
+        amount: 3,
+        note: null,
+        source: 'sync',
+        idempotency_key: '00000000-0000-4000-8000-0000000000ca',
+        created_at: 1,
+        updated_at: 2,
+        deleted_at: null,
+      },
+    });
+    const result = await runSync(deps);
+    expect(result.ok && result.value.status).toBe('up_to_date');
+    const row = await harness.db.getFirstAsync<{
+      amount: number;
+      occurred_at_utc: number;
+    }>('SELECT amount, occurred_at_utc FROM check_ins WHERE id = ?', [checkInId]);
+    expect(row).toEqual({ amount: 3, occurred_at_utc: Date.UTC(2026, 7, 20, 12) });
+    await harness.db.closeAsync();
+  });
+
+  it('accepts command-produced pre-epoch instants and nonmonotonic wall timestamps', async () => {
+    const { harness, deps } = await setup();
+    const boardId = await createBoardForTest(harness, { tracksTime: true });
+    const board = await getBoard(harness.deps, boardId);
+    if (!board.ok) {
+      throw new Error(board.error.message);
+    }
+    harness.clock.advanceMinutes(-1);
+    const updated = await updateBoard(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+      expectedMutationStamp: board.value.mutationStamp,
+      title: 'clock moved back',
+      symbol: board.value.symbol,
+      accentHex: board.value.accentHex,
+      usesTintedBackground: board.value.usesTintedBackground,
+      tracksAmount: board.value.tracksAmount,
+      amountUnit: board.value.amountUnit,
+      quickAmount: board.value.quickAmount,
+      tracksTime: board.value.tracksTime,
+      startOfDayMinute: board.value.startOfDayMinute,
+      metricsEnabled: board.value.metricsEnabled,
+    });
+    expect(updated.ok).toBe(true);
+    const checkIn = await createCheckIn(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+      logicalDate: '1969-12-31' as LogicalDate,
+      occurredAtUtc: Date.UTC(1969, 11, 31, 12),
+      source: 'app',
+    });
+    expect(checkIn.ok).toBe(true);
+    const result = await runSync(deps);
+    expect(result.ok && result.value.status).toBe('up_to_date');
+    await harness.db.closeAsync();
+  });
+
+  it('cancels before entry and after a fetch without committing the fetched page', async () => {
+    const firstSetup = await setup();
+    const stopped = await runSync({ ...firstSetup.deps, shouldContinue: () => false });
+    expect(stopped.ok && stopped.value.status).toBe('idle');
+    expect(firstSetup.transport.ensureZoneCalls).toBe(0);
+    await firstSetup.harness.db.closeAsync();
+
+    const { harness, transport, deps } = await setup();
+    await runSync({ ...deps, shouldContinue: () => true });
+    const before = await harness.db.getFirstAsync<{
+      change_token: string;
+      last_success_at: number;
+      retry_state: string | null;
+    }>('SELECT change_token, last_success_at, retry_state FROM sync_state WHERE id = 1');
+    transport.seedRemote(
+      remoteBoard({
+        id: '00000000-0000-4000-8000-0000000000e8',
+        stamp: '99999999999999-00001-other',
+      }),
+    );
+    let active = true;
+    const fetch = transport.fetchChanges.bind(transport);
+    transport.fetchChanges = async (token) => {
+      const page = await fetch(token);
+      active = false;
+      return page;
+    };
+    const cancelled = await runSync({ ...deps, shouldContinue: () => active });
+    expect(cancelled.ok && cancelled.value.status).toBe('idle');
+    expect(
+      await harness.db.getFirstAsync('SELECT id FROM boards WHERE id = ?', [
+        '00000000-0000-4000-8000-0000000000e8',
+      ]),
+    ).toBeNull();
+    expect(
+      await harness.db.getFirstAsync(
+        'SELECT change_token, last_success_at, retry_state FROM sync_state WHERE id = 1',
+      ),
+    ).toEqual(before);
+    await harness.db.closeAsync();
+  });
+
+  it('keeps the greatest quarantined mutation until a newer valid correction arrives', async () => {
+    const { harness, transport, deps } = await setup();
+    const boardId = '00000000-0000-4000-8000-0000000000ea';
+    transport.seedRemote(
+      remoteBoard({
+        id: boardId,
+        stamp: '99999999999999-00002-other',
+        title: '',
+      }),
+    );
+    await runSync(deps);
+    transport.seedRemote(
+      remoteBoard({
+        id: boardId,
+        stamp: '99999999999999-00001-other',
+        title: 'older valid',
+      }),
+    );
+    transport.seedRemote(
+      remoteBoard({
+        id: boardId,
+        stamp: '99999999999999-00000-other',
+        title: '',
+      }),
+    );
+    const stillBlocked = await runSync(deps);
+    expect(stillBlocked.ok && stillBlocked.value.status).toBe('needs_attention');
+    expect(await harness.db.getFirstAsync('SELECT id FROM boards WHERE id = ?', [boardId])).toBeNull();
+    const deferred = await harness.db.getFirstAsync<{ mutation_stamp: string }>(
+      'SELECT mutation_stamp FROM sync_deferred WHERE entity_id = ?',
+      [boardId],
+    );
+    expect(deferred?.mutation_stamp).toBe('99999999999999-00002-other');
+
+    transport.seedRemote(
+      remoteBoard({
+        id: boardId,
+        stamp: '99999999999999-00003-other',
+        title: 'corrected',
+      }),
+    );
+    const corrected = await runSync(deps);
+    expect(corrected.ok && corrected.value.status).toBe('up_to_date');
+    await harness.db.closeAsync();
+  });
+
+  it('does not quarantine an invalid mutation already superseded locally', async () => {
+    const { harness, transport, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    transport.seedRemote(
+      remoteBoard({ id: boardId, stamp: '00000000000001-00001-other', title: '' }),
+    );
+    const result = await runSync(deps);
+    expect(result.ok && result.value.status).toBe('up_to_date');
+    expect(await harness.db.getAllAsync('SELECT entity_id FROM sync_deferred')).toHaveLength(0);
+    await harness.db.closeAsync();
+  });
+
+  it('quarantines a check-in whose idempotency key belongs to another row', async () => {
+    const { harness, transport, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    const commandId = harness.ids.nextCommandId();
+    const local = await createCheckIn(harness.deps, {
+      commandId,
+      boardId,
+      source: 'app',
+    });
+    if (!local.ok) {
+      throw new Error(local.error.message);
+    }
+    await runSync(deps);
+    const remoteId = '00000000-0000-4000-8000-0000000000eb';
+    const remote = {
+      schemaVersion: SYNC_SCHEMA_VERSION,
+      entityType: 'check_in' as const,
+      entityId: remoteId,
+      mutationStamp: '99999999999999-00001-other',
+      deleted: false,
+      fields: {
+        id: remoteId,
+        board_id: boardId,
+        logical_date: '2026-08-20',
+        occurred_at_utc: null,
+        time_zone_id: null,
+        offset_minutes: null,
+        amount: null,
+        note: null,
+        source: 'sync',
+        idempotency_key: commandId,
+        created_at: 1,
+        updated_at: 2,
+        deleted_at: null,
+      },
+    };
+    transport.seedRemote(remote);
+    const blocked = await runSync(deps);
+    expect(blocked.ok && blocked.value.status).toBe('needs_attention');
+    expect(await harness.db.getAllAsync('SELECT entity_id FROM sync_deferred')).toHaveLength(1);
+
+    transport.seedRemote({
+      ...remote,
+      mutationStamp: '99999999999999-00002-other',
+      fields: {
+        ...remote.fields,
+        idempotency_key: '00000000-0000-4000-8000-0000000000ec',
+      },
+    });
+    const corrected = await runSync(deps);
+    expect(corrected.ok && corrected.value.status).toBe('up_to_date');
+    expect(await harness.db.getAllAsync('SELECT entity_id FROM sync_deferred')).toHaveLength(0);
+    await harness.db.closeAsync();
+  });
+
+  it('retains a late live child as hidden history when its parent is tombstoned', async () => {
+    const { harness, transport, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    await runSync(deps);
+    const deleted = await deleteBoard(harness.deps, {
+      commandId: harness.ids.nextCommandId(),
+      boardId,
+    });
+    expect(deleted.ok).toBe(true);
+    await runSync(deps);
+    const checkInId = '00000000-0000-4000-8000-0000000000ed';
+    transport.seedRemote({
+      schemaVersion: SYNC_SCHEMA_VERSION,
+      entityType: 'check_in',
+      entityId: checkInId,
+      mutationStamp: '99999999999999-00001-other',
+      deleted: false,
+      fields: {
+        id: checkInId,
+        board_id: boardId,
+        logical_date: '2026-08-20',
+        occurred_at_utc: null,
+        time_zone_id: null,
+        offset_minutes: null,
+        amount: null,
+        note: 'offline history',
+        source: 'sync',
+        idempotency_key: '00000000-0000-4000-8000-0000000000ee',
+        created_at: 1,
+        updated_at: 2,
+        deleted_at: null,
+      },
+    });
+    const result = await runSync(deps);
+    expect(result.ok && result.value.status).toBe('up_to_date');
+    expect(await harness.db.getFirstAsync('SELECT id FROM check_ins WHERE id = ?', [checkInId])).not.toBeNull();
+    const visible = await listActiveBoards(harness.deps);
+    expect(visible.ok && visible.value.map((board) => board.id)).not.toContain(boardId);
+    await harness.db.closeAsync();
+  });
+
+  it('clears an older quarantine once a local valid row supersedes it', async () => {
+    const { harness, transport, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    transport.seedRemote(
+      remoteBoard({ id: boardId, stamp: '02000000000000-00001-other', title: '' }),
+    );
+    const blocked = await runSync(deps);
+    expect(blocked.ok && blocked.value.status).toBe('needs_attention');
+    transport.seedRemote(
+      remoteBoard({ id: boardId, stamp: '01000000000000-00001-other', title: '' }),
+    );
+    const stale = await runSync(deps);
+    expect(stale.ok && stale.value.status).toBe('needs_attention');
+    await harness.db.runAsync('UPDATE boards SET mutation_stamp = ? WHERE id = ?', [
+      '03000000000000-00001-local',
+      boardId,
+    ]);
+    const cleared = await runSync(deps);
+    expect(cleared.ok && cleared.value.status).toBe('up_to_date');
+    expect(await harness.db.getAllAsync('SELECT entity_id FROM sync_deferred')).toHaveLength(0);
+    await harness.db.closeAsync();
+  });
+
+  it('cancels while recording a transport failure and propagates a retry-state database failure', async () => {
+    const cancelledSetup = await setup();
+    let failureChecks = 0;
+    cancelledSetup.transport.failNext = new SyncTransportError('offline', 'down');
+    const cancelled = await runSync({
+      ...cancelledSetup.deps,
+      shouldContinue: () => {
+        if (cancelledSetup.transport.failNext === null) {
+          failureChecks += 1;
+          return failureChecks === 1;
+        }
+        return true;
+      },
+    });
+    expect(cancelled.ok && cancelled.value.status).toBe('idle');
+    await cancelledSetup.harness.db.closeAsync();
+
+    const failedSetup = await setup();
+    failedSetup.transport.failNext = new SyncTransportError('offline', 'down');
+    const databaseFailure = new Error('retry state unavailable');
+    const db = {
+      ...failedSetup.deps.db,
+      withTransactionAsync: failedSetup.deps.db.withTransactionAsync.bind(failedSetup.deps.db),
+      withExclusiveTransactionAsync: async () => {
+        throw databaseFailure;
+      },
+    };
+    await expect(runSync({ ...failedSetup.deps, db })).rejects.toBe(databaseFailure);
+    await failedSetup.harness.db.closeAsync();
   });
 
   it('parses and rejects period entity ids', () => {

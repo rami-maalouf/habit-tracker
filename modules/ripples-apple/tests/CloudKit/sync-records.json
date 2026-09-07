@@ -1,0 +1,168 @@
+[
+  {
+    "schemaVersion": 1,
+    "entityType": "board",
+    "entityId": "00000000-0000-4000-8000-000000000001",
+    "mutationStamp": "01787572800000-00000-fixture-device",
+    "deleted": false,
+    "fields": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "Read",
+      "symbol": "book",
+      "accent_hex": "#80D88B",
+      "uses_tinted_background": 1,
+      "tracks_amount": 1,
+      "amount_unit": "pages",
+      "quick_amount": 10,
+      "tracks_time": 1,
+      "start_of_day_minute": 240,
+      "metrics_enabled": 1,
+      "order_key": "a0",
+      "archived_at": null,
+      "created_at": 1787572800000,
+      "updated_at": 1787572800000,
+      "deleted_at": null
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "entityType": "board",
+    "entityId": "00000000-0000-4000-8000-000000000001",
+    "mutationStamp": "01787572800001-00001-fixture-device",
+    "deleted": true,
+    "fields": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "title": "",
+      "symbol": "",
+      "accent_hex": "",
+      "uses_tinted_background": 0,
+      "tracks_amount": 0,
+      "amount_unit": null,
+      "quick_amount": 0,
+      "tracks_time": 0,
+      "start_of_day_minute": 0,
+      "metrics_enabled": 0,
+      "order_key": "a0",
+      "archived_at": null,
+      "created_at": 1787572800000,
+      "updated_at": 1787572800001,
+      "deleted_at": 1787572800001
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "entityType": "check_in",
+    "entityId": "00000000-0000-4000-8000-000000000002",
+    "mutationStamp": "01787572800000-00000-fixture-device",
+    "deleted": false,
+    "fields": {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "board_id": "00000000-0000-4000-8000-000000000001",
+      "logical_date": "2026-08-24",
+      "occurred_at_utc": 1787572800000,
+      "time_zone_id": "America/Toronto",
+      "offset_minutes": -240,
+      "amount": 12.5,
+      "note": "A synthetic fixture note.",
+      "source": "manual",
+      "idempotency_key": "00000000-0000-4000-8000-000000000102",
+      "created_at": 1787572800000,
+      "updated_at": 1787572800000,
+      "deleted_at": null
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "entityType": "check_in",
+    "entityId": "00000000-0000-4000-8000-000000000002",
+    "mutationStamp": "01787572800001-00001-fixture-device",
+    "deleted": true,
+    "fields": {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "board_id": "00000000-0000-4000-8000-000000000001",
+      "logical_date": "",
+      "occurred_at_utc": null,
+      "time_zone_id": null,
+      "offset_minutes": null,
+      "amount": null,
+      "note": null,
+      "source": "sync",
+      "idempotency_key": "00000000-0000-4000-8000-000000000002",
+      "created_at": 1787572800000,
+      "updated_at": 1787572800001,
+      "deleted_at": 1787572800001
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "entityType": "reminder",
+    "entityId": "00000000-0000-4000-8000-000000000003",
+    "mutationStamp": "01787572800000-00000-fixture-device",
+    "deleted": false,
+    "fields": {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "board_id": "00000000-0000-4000-8000-000000000001",
+      "weekdays_mask": 127,
+      "minute_of_day": 1080,
+      "message": "Synthetic reminder",
+      "enabled": 1,
+      "created_at": 1787572800000,
+      "updated_at": 1787572800000,
+      "deleted_at": null
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "entityType": "reminder",
+    "entityId": "00000000-0000-4000-8000-000000000003",
+    "mutationStamp": "01787572800001-00001-fixture-device",
+    "deleted": true,
+    "fields": {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "board_id": "00000000-0000-4000-8000-000000000001",
+      "weekdays_mask": 0,
+      "minute_of_day": 0,
+      "message": null,
+      "enabled": 0,
+      "created_at": 1787572800000,
+      "updated_at": 1787572800001,
+      "deleted_at": 1787572800001
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "entityType": "activity_period",
+    "entityId": "00000000-0000-4000-8000-000000000001|2026-08-01",
+    "mutationStamp": "01787572800000-00000-fixture-device",
+    "deleted": false,
+    "fields": {
+      "board_id": "00000000-0000-4000-8000-000000000001",
+      "start_date": "2026-08-01",
+      "end_date": "2026-08-24",
+      "deleted_at": null
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "entityType": "activity_period",
+    "entityId": "00000000-0000-4000-8000-000000000001|2026-08-01",
+    "mutationStamp": "01787572800001-00001-fixture-device",
+    "deleted": true,
+    "fields": {
+      "board_id": "00000000-0000-4000-8000-000000000001",
+      "start_date": "2026-08-01",
+      "end_date": null,
+      "deleted_at": 1787572800001
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "entityType": "settings",
+    "entityId": "app-settings",
+    "mutationStamp": "01787572800000-00000-fixture-device",
+    "deleted": false,
+    "fields": {
+      "metrics_education_dismissed": "[\"check-ins\"]"
+    }
+  }
+]
