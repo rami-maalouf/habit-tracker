@@ -1,11 +1,23 @@
 # remaining signed acceptance
 
-Source: `eb2189f`. EAS development build:
-`6d550951-0fe7-4e16-9aee-9e68024b9ec5`.
-Finished 2026-09-07, version 1.0.0 (1). The downloaded IPA passed deep strict signature
-verification and its signed entitlements, icon registrations, and intent metadata
-match this checklist. Install from the build page:
-https://expo.dev/accounts/ramimaalouf/projects/habit-tracker/builds/6d550951-0fe7-4e16-9aee-9e68024b9ec5
+Replacement EAS development build: `cd2e117b-d048-4367-87f0-4c1931c2c486`.
+It contains the shared-ExpoSQLite correction above base `f02c8e9`; EAS reports
+the base Git revision because the correction was uploaded from the working tree.
+Finished 2026-09-07, version 1.0.0 (1). Independent verification passed for deep
+strict signatures, Development entitlements, both-device provisioning, icons,
+and intent metadata. It is installed on the iPhone and iPad. Build page:
+https://expo.dev/accounts/ramimaalouf/projects/habit-tracker/builds/cd2e117b-d048-4367-87f0-4c1931c2c486
+
+Do not use the original mixed-SQLite build or the re-sign job
+`3835b2da-dac0-4809-a1d9-2f4dc32908a9`, which changed CloudKit to Production.
+The iPad has launched the corrected build and completed the concurrent native/app
+database stress check. iCloud is enabled, a successful sync is recorded, and the
+upload queue has drained to zero. It received the existing phone board. Full
+two-target offline/conflict acceptance remains open.
+
+User clarification: "I meant download it on my iPad." This supersedes the prior
+stop instruction and authorizes iPad installation/use for acceptance again. The
+verified build was already installed, so resume using that installation.
 
 The app is `studio.orbitlabs.habittracker`, separate from the old bundle.
 CloudKit container: `iCloud.studio.orbitlabs.habittracker`; zone: `habit-tracker`.
@@ -21,6 +33,13 @@ CloudKit build. Do not sign into a different iCloud account in an already-bound 
 - Record only synthetic acceptance boards; private evidence stays in `.artifacts/`.
 
 ## cloudkit convergence
+
+Before convergence, run the bounded synthetic WAL concurrency check documented in
+`.artifacts/pre-fork/physical-ui-runner/WAL-ACCEPTANCE.md`, then confirm integrity
+and normal iCloud status through the UI. The helper received independent review;
+the physical iPad run passed: 24 commands, 12 concurrent native account checks,
+six reads, six receipt replays, matching widget projection, unchanged existing
+records, and passing integrity. Evidence: `.artifacts/pre-fork/ipad-wal-acceptance.json`.
 
 1. Enable iCloud Sync through its consent on both targets. Verify both reach
    Up to Date and the waiting count drains. Retain any failure as an open finding.

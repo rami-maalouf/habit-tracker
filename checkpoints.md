@@ -209,12 +209,83 @@
 - Remaining acceptance: signed physical iPhone plus second-target CloudKit
   convergence, actual three Shortcuts and Siri execution, and physical widget/icon
   checks. `tasks/pre-fork-device-acceptance.md` records the concrete acceptance path.
-  The paired physical iPhone remains unavailable to the machine.
+  The paired physical iPhone was unavailable at that checkpoint; the device
+  continuation below supersedes this prerequisite status.
 - Deferred by the user: release destination URLs. Native implementation is not
   deferred to the fork, and signed acceptance has not been waived. Item 3.8 is
   therefore still open. No `ripples-v1-fork-point` tag or habit-system fork was created.
 - The session-owned Metro 8082 was stopped after verification. User-owned Metro
   8081 remains running. Scoped Argent simulator cleanup is recorded above.
+
+### Signed-device continuation - SQLite integration correction
+
+1. The user connected the iPhone 16 Pro and iPad Air 4, and enabled iCloud Sync
+   on the iPhone. Both devices are registered in the app and widget ad hoc profiles.
+   Existing certificates were reused. The iPhone installed the first Development
+   build and reported native CloudKit availability, a successful sync, zero pending
+   uploads, and a passing database integrity check. Its existing personal records
+   were not changed by the diagnostic checks.
+2. A physical UI check exposed `EXC_BAD_ACCESS`/`SIGBUS` in Expo SQLite's WAL-index
+   write. The concurrent thread was inside system SQLite performing the native
+   account-binding check on the same database. The fault address was in a 32 KB
+   mapped-file region, consistent with the WAL index. A bounded synthetic host
+   reproduction did not crash. SQLite documents why linking separate SQLite copies
+   against one database in a process is unsafe:
+   https://sqlite.org/howtocorrupt.html#multiple_copies_of_sqlite_linked_into_the_same_application
+3. Both native database consumers now import ExpoSQLite and call its `exsqlite3_*`
+   functions on iOS. The pod depends on ExpoSQLite and no longer directly links
+   system SQLite. macOS-only aliases retain the existing SwiftPM test targets.
+   Transaction boundaries, full-mutex opens, and the busy timeout are unchanged.
+4. Independent GPT-5.6 Sol review: PASS. The actual simulator arm64 pod archive
+   contains 28 Expo-prefixed SQLite references and zero system SQLite references.
+   `bun run test:native:linkage` checks the pod dependency and compiled symbols;
+   a synthetic mixed-symbol object proves the guard rejects the old failure class.
+   The initial guard path error was corrected before approval. Validation passed:
+   569 Jest tests, lint/typecheck, 48 Swift tests, three plugin tests, and Doctor
+   21/21. Global coverage is 97.5/95.57/95.58/97.59; core gates remain enforced.
+5. Physical UI control uses an ignored, external XCTest runner because this Argent
+   version does not support physical iOS control. The running phone's React Native
+   runtime was inspected through Argent. The runner uses an existing local wildcard
+   development profile and no product target. Automatic UI attachments are discarded;
+   explicit evidence contains only allowlisted status/counts or the iCloud screen.
+   Private diagnostic evidence is in `.artifacts/pre-fork/physical-ui-runner/`.
+6. EAS re-sign job `3835b2da-dac0-4809-a1d9-2f4dc32908a9` added iPad provisioning
+   but changed the app entitlement from CloudKit Development to Production. That
+   artifact is rejected for acceptance. Its attempted iPad installation failed
+   before installation because the device was locked. The iPad is now unlocked.
+7. Replacement full Development build `cd2e117b-d048-4367-87f0-4c1931c2c486`
+   was submitted with frozen credentials. It includes the working-tree native
+   SQLite correction above base `f02c8e9`; its reported Git revision is that base.
+   Independent GPT-5.6 Sol signed-artifact verification passed: safe ZIP/deep strict
+   signatures, Development, approved identities/container/group, both devices in
+   both profiles, minimum iOS, icons and three intents. SHA-256:
+   `f6652598fb0e3ae1ad51355f2f0b38f53c4d001702561d66dfa7d31fb55a4138`.
+   The replacement installed over the existing phone app and onto the iPad without
+   uninstalling or resetting either store. iOS then rejected both app launches
+   because the devices were locked. Unlocking was requested. The prepared synthetic
+   WAL and cross-device helpers passed independent review but have not run.
+   Corrected-build physical acceptance and fork readiness remain open.
+8. The user subsequently instructed not to download/install on the iPad. Its
+   installation had already completed before that message. Stopped all iPad work,
+   informed the phone worker, and left the installation untouched. iPhone work
+   remains authorized; two-target convergence needs another authorized signed
+   target and is not waived by this change.
+9. The user clarified: "I meant download it on my iPad." This supersedes item 8's
+   stop instruction. Resumed iPad acceptance using the existing verified install;
+   the subsequent normal app launch succeeded. No reinstall or reset was needed.
+10. Corrected-build iPad WAL acceptance: PASS. The independently reviewed runtime
+    harness completed 24 check-in commands, 12 concurrent native CloudKit account
+    checks, six reads, and six receipt replays in 2,739 ms. It verified exact
+    check-in/receipt counts, unique idempotency keys, the widget projection, intact
+    pre-existing rows, no synthetic notes, and database integrity. The normal sync
+    coordinator subsequently drained the upload queue to zero. The iPad also
+    received the existing phone board through CloudKit. This establishes the
+    corrected database integration and basic cross-device delivery, not the full
+    offline/conflict matrix. Evidence: `.artifacts/pre-fork/ipad-wal-acceptance.json`.
+11. The phone was foregrounding a personal call, so its UI checks stopped without
+    mutation. The user then prioritized both booted simulators and authorized
+    parallel agents. Simulator Shortcuts/widget and icon/accessibility checks run
+    separately from the physical iPad sync checks; neither simulator is reset.
 
 ### 3.6 - focused contract and sync scripts
 

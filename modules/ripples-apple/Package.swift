@@ -10,7 +10,7 @@ let package = Package(
     .target(
       name: "RipplesCloudKit", path: "ios",
       exclude: ["Intents", "AlternateIconAdapter.swift", "AlternateIconConfiguration.swift", "CloudKitExpoBridge.swift", "RipplesAppleModule.swift", "RipplesApple.podspec"],
-      sources: ["CloudKitErrors.swift", "CloudKitRecordMapping.swift", "CloudKitToken.swift", "CloudKitTransport.swift", "CloudKitOperations.swift", "CloudKitAccountBinding.swift"],
+      sources: ["CloudKitErrors.swift", "CloudKitRecordMapping.swift", "CloudKitToken.swift", "CloudKitTransport.swift", "CloudKitOperations.swift", "CloudKitAccountBinding.swift", "CloudKitSQLiteCompat.swift"],
       linkerSettings: [.linkedFramework("CloudKit"), .linkedLibrary("sqlite3")]
     ),
     .testTarget(name: "RipplesCloudKitTests", dependencies: ["RipplesCloudKit"], path: "tests/CloudKit", resources: [.copy("sync-records.json")]),

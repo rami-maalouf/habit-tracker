@@ -61,6 +61,7 @@
     "test:features": "jest --runInBand tests/product/features",
     "test:sync": "jest --runInBand tests/product/sync",
     "test:native:config": "bun test modules/ripples-apple/tests/plugin/config.test.cjs",
+    "test:native:linkage": "sh modules/ripples-apple/tests/native/verify-sqlite-linkage.sh",
     "test:native": "bun run test:native:config && swift test --package-path modules/ripples-apple",
     "validate": "bun run lint && bun run typecheck && bun run test:coverage"
   },

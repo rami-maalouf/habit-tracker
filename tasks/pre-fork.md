@@ -26,8 +26,9 @@ Requested 2026-09-07. Governing documents: `SPEC-ripples-product.md`,
 - Approved namespace: `studio.orbitlabs.habittracker`, app group
   `group.studio.orbitlabs.habittracker`, container `iCloud.studio.orbitlabs.habittracker`,
   widget extension `studio.orbitlabs.habittracker.ExpoWidgetsTarget`.
-- The paired iPhone 16 Pro is currently unavailable. A connected, unlocked physical iPhone
-  and a second signed target with the same iCloud test account are still needed.
+- The iPhone 16 Pro and iPad Air 4 are connected and registered for the app and
+  widget signing profiles. The user enabled iCloud Sync on the iPhone. Physical
+  acceptance is in progress; account/environment convergence is not yet proven.
 - Zone name approved by the user: `habit-tracker`.
 - Direct CloudKit operations and the Swift intent executor are approved and implemented.
 - Approved CloudKit correction: conditional saves must preserve the greater
@@ -109,3 +110,32 @@ both alternate icons, and the registered iPhone. Exactly three public intents ar
 Two signed targets must still prove CloudKit convergence, and the physical iPhone must
 run the three Shortcuts, Siri, widget refresh, and icon relaunch acceptance. These are
 pending, not deferred to the fork. No fork or fork-point tag has been made.
+
+Physical testing exposed concurrent access to the same WAL database through Expo's
+vendored SQLite and Apple's system SQLite. A phone crash occurred in Expo's WAL-index
+write while the account-binding check was inside system SQLite. Both native consumers
+now use ExpoSQLite; independent review, compiled-symbol verification, and all source
+gates pass. A synthetic host reproduction did not crash, so the exact fault remains
+subject to verification on the corrected physical build.
+
+EAS re-sign job `3835b2da-dac0-4809-a1d9-2f4dc32908a9` added the iPad to both
+profiles but changed the app's CloudKit entitlement to Production. That artifact is
+rejected for acceptance. A new full Development build must pass signature, environment,
+and both-device provisioning checks before installation.
+
+Replacement full build `cd2e117b-d048-4367-87f0-4c1931c2c486` passed those checks
+independently and installed on both devices. Both app launches were then blocked by
+iOS because the screens were locked. Unlocking has been requested. No corrected-build
+physical acceptance or fork readiness is claimed yet; the source correction is still
+uncommitted pending its physical checkpoint.
+
+The user's temporary stop instruction was clarified: "I meant download it on my
+iPad." iPad installation/use is authorized again. The verified build is already
+installed; two-device acceptance can resume without reinstalling or resetting data.
+
+Corrected-build iPad acceptance now passes the concurrent database check: 24
+check-ins, 12 native account checks, six reads and six receipt replays; existing
+records and database integrity are intact. The normal coordinator drained the
+upload queue to zero, and the iPad received the phone's existing board. The full
+two-target offline/conflict matrix remains open. Both booted simulators are now
+authorized for parallel Shortcuts/widget and icon/accessibility acceptance.
