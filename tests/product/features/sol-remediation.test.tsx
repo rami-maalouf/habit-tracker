@@ -100,6 +100,10 @@ describe('draft session ownership', () => {
 describe('check-in time recombination', () => {
   beforeEach(() => {
     resetProductCoreForTests();
+    // the picker instants in this block are built with new Date(y, m, d, ...)
+    // and read back with getDate()/getHours(), both of which use the host
+    // zone, so the board must live in that zone for the two to agree
+    mockClock.zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     alertSpy.mockClear();
   });
 
@@ -389,6 +393,11 @@ describe('round two: session isolation and read-only surfaces', () => {
   it('keeps the picked occurrence through the repeated dst hour', async () => {
     // november 1 2026 repeats 1:30 am in us zones; the board lives across
     // the transition and the clock sits the day after
+    // the picker instants below are built with new Date(y, m, d, ...), which
+    // reads the host zone, so the board must live in that same zone or the
+    // logical-date checks resolve against a different wall clock
+    const hostZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    mockClock.zone = hostZone;
     mockClock.utcMs = Date.UTC(2026, 9, 25, 16, 0);
     const boardId = await seedBoard('exact habit', { tracksTime: true });
     mockClock.utcMs = Date.UTC(2026, 10, 2, 16, 0);
