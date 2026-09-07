@@ -191,8 +191,21 @@
   tracked. Only source flow definitions are committed, with their replay limits.
 - EAS accepted signed development build `6d550951-0fe7-4e16-9aee-9e68024b9ec5`
   from `eb2189f0270e819193079f286bf79a5dd1f9d423`; status at this checkpoint:
-  In Progress. Build page:
+  Finished on 2026-09-07 at 22:30 UTC. Version 1.0.0, build 1. Build page:
   https://expo.dev/accounts/ramimaalouf/projects/habit-tracker/builds/6d550951-0fe7-4e16-9aee-9e68024b9ec5
+- Downloaded the 44,303,155-byte IPA to ignored local evidence. Deep strict
+  `codesign` verification passed. The actual signed app contains the approved
+  bundle/team, minimum iOS 18.6, CloudKit Development/container entitlement, shared
+  app group, Midnight/Paper registrations for iPhone/iPad, and matching widget id.
+  Its profile includes the registered physical iPhone. The archive metadata has
+  exactly three discoverable Ripples intents; widget-only actions are hidden.
+  Filtered proof: `.artifacts/pre-fork/signed-ipa-entitlements.json` and
+  `signed-ipa-verification.log`. Ad hoc signing does not enable native debugger
+  attachment (`get-task-allow` is false); this is an installable development client.
+- Independent GPT-5.6 Sol artifact verdict: PASS. The reviewer separately verified
+  IPA integrity, deep strict signature, identities/environment/minimum OS, compiled
+  Assets.car entries, both alternate-icon registrations, three discoverable intents,
+  and three matching shortcut entries. No physical execution was inferred.
 - Remaining acceptance: signed physical iPhone plus second-target CloudKit
   convergence, actual three Shortcuts and Siri execution, and physical widget/icon
   checks. `tasks/pre-fork-device-acceptance.md` records the concrete acceptance path.
@@ -200,6 +213,8 @@
 - Deferred by the user: release destination URLs. Native implementation is not
   deferred to the fork, and signed acceptance has not been waived. Item 3.8 is
   therefore still open. No `ripples-v1-fork-point` tag or habit-system fork was created.
+- The session-owned Metro 8082 was stopped after verification. User-owned Metro
+  8081 remains running. Scoped Argent simulator cleanup is recorded above.
 
 ### 3.6 - focused contract and sync scripts
 

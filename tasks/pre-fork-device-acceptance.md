@@ -2,7 +2,10 @@
 
 Source: `eb2189f`. EAS development build:
 `6d550951-0fe7-4e16-9aee-9e68024b9ec5`.
-Build status and installation artifact must be checked before using it.
+Finished 2026-09-07, version 1.0.0 (1). The downloaded IPA passed deep strict signature
+verification and its signed entitlements, icon registrations, and intent metadata
+match this checklist. Install from the build page:
+https://expo.dev/accounts/ramimaalouf/projects/habit-tracker/builds/6d550951-0fe7-4e16-9aee-9e68024b9ec5
 
 The app is `studio.orbitlabs.habittracker`, separate from the old bundle.
 CloudKit container: `iCloud.studio.orbitlabs.habittracker`; zone: `habit-tracker`.

@@ -102,7 +102,10 @@ The icon replay passes; the full data replay remains unproven due to an Argent n
 consent selector limitation, although its recorded manual walkthrough passed.
 
 The development/internal profiles explicitly use CloudKit Development; the production
-profile uses Production. Verify the final signed IPA entitlement before device testing.
+profile uses Production. Signed EAS build `6d550951-0fe7-4e16-9aee-9e68024b9ec5`
+finished successfully from `eb2189f`. The downloaded IPA passed deep strict signature
+verification; actual entitlements confirm Development, the approved team/group/container,
+both alternate icons, and the registered iPhone. Exactly three public intents are present.
 Two signed targets must still prove CloudKit convergence, and the physical iPhone must
 run the three Shortcuts, Siri, widget refresh, and icon relaunch acceptance. These are
 pending, not deferred to the fork. No fork or fork-point tag has been made.
