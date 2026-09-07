@@ -53,7 +53,7 @@ The product should feel calm and immediate. A check-in must take one tap when th
 - Every module listed in Covered module ids
 - All product routes and native sheets shown by the private references
 - Local persistence, migrations, typed commands, queries, and projections
-- Deterministic calendar, check-in, analytics, archive, deletion, export, and sync semantics
+- Deterministic calendar, check-in, analytics, archive, deletion, export, import, and sync semantics
 - Local notification permissions and schedules
 - iOS widgets and interactive widget actions
 - Private CloudKit sync
@@ -68,7 +68,6 @@ The product should feel calm and immediate. A check-in must take one tap when th
 - Web product support
 - Accounts, passwords, a custom backend, team sharing, or public social features
 - Remote push notifications
-- Import or restore from an export file
 - Attachments, rich text, standalone journal entries, search, or tags
 - Goals, scheduled habit frequencies, skipped days, rest days, penalties, scores shared between users, or gamification
 - Apple Watch, watchOS complications, Live Activities, Lock Screen accessory widgets, macOS, iPad-specific navigation, or visionOS

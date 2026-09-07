@@ -67,7 +67,8 @@ records, and passing integrity. Evidence: `.artifacts/pre-fork/ipad-wal-acceptan
 3. Run Get Today's Check-Ins with and without a board. Verify board names/counts
    for each board's current logical date and no note text in results.
 4. Run the Check In Siri phrase and verify the resulting check-in in the app.
-   Verify archived/deleted entities return actionable results.
+   Run Get Today's Check-Ins through Siri and verify board names and counts with
+   no note text. Verify archived/deleted entities return actionable results.
 5. Add the supported Home Screen widget, confirm projection updates, and confirm
    its quick action opens Add Check-In. In-place widget writes remain out of scope.
 6. Change Default to Midnight, relaunch, then Paper and relaunch. Confirm both the

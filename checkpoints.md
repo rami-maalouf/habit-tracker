@@ -306,6 +306,21 @@
    `.artifacts/pre-fork/icons-accessibility-acceptance/native-readonly-status.json`.
    This UI check does not claim signed CloudKit account acceptance.
 
+### Pre-fork closure audit corrections
+
+1. The independent closure audit found an obsolete out-of-scope import bullet
+   despite the already-approved import section. Removed that bullet and included
+   import in the scope inventory under the existing item 3.7 approval. No import
+   behavior or schema changed.
+2. The acceptance runbook now includes both Siri scenarios required by the
+   governing product spec: Check In and Get Today's Check-Ins. The pre-fork draft
+   mentioned only Check In; this correction restores the existing requirement.
+3. The SQLite integration correction is committed and pushed as `734f9e7`;
+   Settings accessibility is committed and pushed as `a5db12b`. The independent
+   audit confirmed clean main matching origin, passing recorded gates, no tracked
+   private/generated/signing artifacts, and effective ignore rules. Final closure
+   remains pending device acceptance; no fork-point tag has been created.
+
 ### 3.6 - focused contract and sync scripts
 
 1. Both focused scripts reproduced exit 1 with no tests found before the move.
