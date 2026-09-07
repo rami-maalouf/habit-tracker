@@ -3,11 +3,14 @@ import { useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
+import { Icon } from '@/components/foundation/icon';
 import { currentLogicalDate, parseLogicalDate } from '@/core/calendar/logical-date';
 import type { BoardId } from '@/core/domain/ids';
 import type { Board } from '@/core/domain/entities';
 import {
   getBoard,
+  getBoardHeatmap,
+  getBoardSummary,
   getConsistencyAnalytics,
   getEarliestCheckInDate,
   getStreakAnalytics,
@@ -15,7 +18,7 @@ import {
   getWeekdayAnalytics,
   getYearComparison,
 } from '@/core/domain/queries';
-import { radius, radiusCurve, semanticColor, spacing } from '@/theme';
+import { radius, radiusCurve, semanticColor, semanticFallbacks, spacing } from '@/theme';
 
 import { deriveBoardColors } from '../boards';
 import { InlineError, PrimaryButton, ProductPressable, useScheme } from '../ui';
@@ -30,6 +33,7 @@ import {
   weekdayBarPaths,
 } from './charts';
 import type { StreakRow } from './charts';
+import { HabitProgress } from './habit-progress';
 
 const MONTH_INITIALS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
 const MONTH_SHORT = [
@@ -91,6 +95,7 @@ function YearControl({
   onChange: (year: number) => void;
   testID: string;
 }) {
+  const scheme = useScheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
       <ProductPressable
@@ -99,7 +104,7 @@ function YearControl({
         label={`Previous year, ${year - 1}`}
         testID={`${testID}-previous`}
       >
-        <AppText selectable={false}>‹</AppText>
+        <Icon name="chevronLeft" size={16} color={semanticFallbacks.label[scheme]} />
       </ProductPressable>
       <AppText variant="headline" testID={testID}>
         {String(year)}
@@ -110,7 +115,7 @@ function YearControl({
         label={`Next year, ${year + 1}`}
         testID={`${testID}-next`}
       >
-        <AppText selectable={false}>›</AppText>
+        <Icon name="chevronRight" size={16} color={semanticFallbacks.label[scheme]} />
       </ProductPressable>
     </View>
   );
@@ -187,7 +192,7 @@ function AnalyticsBody({
   earliestDate: string | null;
 }) {
   const scheme = useScheme();
-  const { core } = useProduct();
+  const { core, invalidate } = useProduct();
   // the board's shifted start of day decides which year "today" is in
   const logicalToday = currentLogicalDate(
     core.clock.nowUtcMs(),
@@ -201,6 +206,8 @@ function AnalyticsBody({
   const [timelineYear, setTimelineYear] = useState(currentYear);
   const [comparisonYear, setComparisonYear] = useState(currentYear);
 
+  const summary = useProductQuery((c) => getBoardSummary(c, boardId), [boardId]);
+  const heatmap = useProductQuery((c) => getBoardHeatmap(c, boardId, { days: 7 }), [boardId]);
   const timeline = useProductQuery(
     (c) => getTimelineAnalytics(c, boardId, timelineYear),
     [boardId, timelineYear],
@@ -214,7 +221,7 @@ function AnalyticsBody({
   const streaks = useProductQuery((c) => getStreakAnalytics(c, boardId), [boardId]);
 
   const colors = deriveBoardColors(record.accentHex, scheme);
-  const queryError = [timeline, weekdays, comparison, consistency, streaks].find(
+  const queryError = [summary, heatmap, timeline, weekdays, comparison, consistency, streaks].find(
     (query) => query.status === 'error',
   );
 
@@ -242,6 +249,14 @@ function AnalyticsBody({
     ? weekdayData.weekdayCounts.reduce((sum, value) => sum + value, 0)
     : 0;
 
+  const bestWeekdayCount = weekdayData ? Math.max(...weekdayData.weekdayCounts) : 0;
+  const bestWeekdays = weekdayData
+    ? DAY_NAMES.filter((_, index) => weekdayData.weekdayCounts[index] === bestWeekdayCount)
+    : [];
+  const bestWeekdaySummary = bestWeekdays.length === 7
+    ? 'Check-ins are evenly spread across the week.'
+    : `Most active: ${bestWeekdays.join(', ')} (${bestWeekdayCount} check-ins${bestWeekdays.length > 1 ? ' each' : ''}).`;
+
   return (
     <View style={{ flex: 1, backgroundColor: semanticColor('groupedBackground', scheme) }}>
       <Stack.Screen options={{ title: 'Analytics' }} />
@@ -252,8 +267,17 @@ function AnalyticsBody({
         {queryError && queryError.status === 'error' ? (
           <View style={{ gap: spacing.md }} testID="analytics-query-error">
             <InlineError message={queryError.error.message} />
-            <PrimaryButton title="Try again" onPress={queryError.refresh} />
+            <PrimaryButton title="Try again" onPress={invalidate} />
           </View>
+        ) : null}
+
+        {summary.status === 'ready' && summary.value ? (
+          <HabitProgress
+            summary={summary.value}
+            weeks={heatmap.status === 'ready' ? heatmap.value?.weeks : undefined}
+            colors={colors}
+            testID="analytics-overview"
+          />
         ) : null}
 
         <SectionCard
@@ -286,9 +310,10 @@ function AnalyticsBody({
                 })}
               </ChartFrame>
               <AppText variant="footnote" testID="timeline-summary">
-                {`${timelineYear}: ${timelineValues
-                  .map((value, index) => `${MONTH_SHORT[index]} ${value === null ? 'n/a' : value}`)
-                  .join(', ')}. Total ${timelineTotal}.`}
+                {`${timelineTotal} check-ins in ${timelineYear}. ${timelineValues
+                  .map((value, index) => value ? `${MONTH_SHORT[index]} ${value}` : null)
+                  .filter(Boolean)
+                  .join(' · ')}`}
               </AppText>
             </>
           ) : (
@@ -322,11 +347,7 @@ function AnalyticsBody({
                   <AppText variant="subheadline">{`Workdays ${Math.round(weekdayData.workdayPercent)}%`}</AppText>
                   <AppText variant="subheadline">{`Weekends ${Math.round(weekdayData.weekendPercent)}%`}</AppText>
                   <AppText variant="footnote" testID="weekday-direction">
-                    {weekdayData.direction === 'up'
-                      ? 'Trending up vs the prior period'
-                      : weekdayData.direction === 'down'
-                        ? 'Trending down vs the prior period'
-                        : 'Even with the prior period'}
+                    {`${weekdayTotal} check-ins in the past 12 months`}
                   </AppText>
                 </View>
               </View>
@@ -345,9 +366,7 @@ function AnalyticsBody({
                 })}
               </ChartFrame>
               <AppText variant="footnote" testID="weekday-summary">
-                {weekdayData.weekdayCounts
-                  .map((count, index) => `${DAY_NAMES[index]} ${count}`)
-                  .join(', ')}
+                {bestWeekdaySummary}
               </AppText>
             </>
           ) : (
@@ -413,11 +432,7 @@ function AnalyticsBody({
                 </AppText>
               ) : null}
               <AppText variant="footnote" testID="comparison-summary">
-                {`${comparisonData.selectedYear}: ${comparisonData.selected
-                  .map((value, index) => `${MONTH_SHORT[index]} ${value === null ? 'n/a' : value}`)
-                  .join(', ')}. ${comparisonData.previousYear}: ${comparisonData.previous
-                  .map((value, index) => `${MONTH_SHORT[index]} ${value}`)
-                  .join(', ')}.`}
+                {`${comparisonData.selectedYear}: ${comparisonData.selected.reduce<number>((total, count) => total + (count ?? 0), 0)} check-ins${comparisonYear === currentYear ? ' so far' : ''}. ${comparisonData.previousYear}: ${previousYearTotal} check-ins.`}
               </AppText>
             </>
           ) : (
@@ -451,15 +466,10 @@ function AnalyticsBody({
               </ChartFrame>
               <AppText variant="footnote" testID="consistency-summary">
                 {consistencyData
-                  .map(
-                    (month) =>
-                      `${month.month}: ${
-                        month.percent === null
-                          ? 'no data'
-                          : `${Math.round(month.percent)}% (${month.band})`
-                      }`,
-                  )
-                  .join(', ')}
+                  .filter((month) => month.percent !== null)
+                  .slice(-3)
+                  .map((month) => `${month.month}: ${Math.round(month.percent!)}%`)
+                  .join(' · ')}
               </AppText>
             </>
           ) : (

@@ -67,11 +67,11 @@ describe('query error surfaces', () => {
 
     renderRouter('src/app', { initialUrl: `/boards/${boardId}` });
     expect(await screen.findByTestId('detail-query-error')).toBeOnTheScreen();
-    // the education card never renders over a failed supporting query
-    expect(screen.queryByTestId('metrics-education')).toBeNull();
+    // metrics never render from a failed supporting query
+    expect(screen.queryByTestId('metrics-cards')).toBeNull();
 
     await press('detail-query-retry');
-    expect(await screen.findByTestId('metrics-education')).toBeOnTheScreen();
+    expect(await screen.findByTestId('metrics-cards')).toBeOnTheScreen();
     expect(screen.queryByTestId('detail-query-error')).toBeNull();
   });
 

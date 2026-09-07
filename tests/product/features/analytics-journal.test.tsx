@@ -110,6 +110,7 @@ describe('analytics sheet', () => {
     renderRouter('src/app', { initialUrl: `/boards/${boardId}/analytics` });
 
     expect(await screen.findByTestId('analytics-timeline')).toBeOnTheScreen();
+    expect(screen.getByTestId('analytics-overview')).toBeOnTheScreen();
     expect(screen.getByTestId('analytics-weekdays')).toBeOnTheScreen();
     expect(screen.getByTestId('analytics-comparison')).toBeOnTheScreen();
     expect(screen.getByTestId('analytics-consistency')).toBeOnTheScreen();
@@ -128,6 +129,8 @@ describe('analytics sheet', () => {
     // text summaries carry the same values as the charts
     expect(screen.getByTestId('timeline-summary')).toHaveTextContent(/Aug 8/);
     expect(screen.getByTestId('weekday-summary')).toBeOnTheScreen();
+    expect(screen.getByTestId('weekday-summary')).toHaveTextContent('Most active: Saturday (3 check-ins).');
+    expect(screen.queryByText(/Trending up|Trending down/)).toBeNull();
     expect(screen.getByTestId('comparison-summary')).toHaveTextContent(/2026/);
     expect(screen.getByTestId('consistency-summary')).toHaveTextContent(/2026-08/);
     expect(screen.getByTestId('streak-summary')).toHaveTextContent(/Longest streak - 4 days/);
@@ -157,6 +160,10 @@ describe('analytics sheet', () => {
 
     expect(await screen.findByTestId('weekday-empty')).toBeOnTheScreen();
     expect(screen.getByTestId('consistency-empty')).toBeOnTheScreen();
+    expect(screen.getByTestId('analytics-overview')).toBeOnTheScreen();
+    expect(screen.getByText('0%')).toBeOnTheScreen();
+    expect(screen.getByText('check-ins · 0 active days')).toBeOnTheScreen();
+    expect(screen.queryByText(/example boards/i)).toBeNull();
   });
 
   it('locks analytics behind metrics and archive states', async () => {

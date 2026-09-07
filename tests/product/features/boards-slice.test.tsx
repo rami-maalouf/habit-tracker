@@ -83,21 +83,18 @@ describe('boards vertical slice', () => {
     expect(screen.getByTestId('board-card-1')).toHaveTextContent(/first/);
   });
 
-  it('opens board detail with education, dismissal, and quick add', async () => {
+  it('opens a new board with real metrics and no example prompts', async () => {
     renderRouter('src/app', { initialUrl: '/' });
     await screen.findByTestId('empty-create-board');
     await createBoardThroughUi('read daily');
 
     fireEvent.press(screen.getByText('read daily'));
     await settle();
-    expect(await screen.findByTestId('metrics-education')).toBeOnTheScreen();
+    expect(await screen.findByTestId('metrics-cards')).toBeOnTheScreen();
     expect(await screen.findByTestId('board-heatmap')).toBeOnTheScreen();
 
-    await press('example-boards');
-    expect(screen.getByTestId('example-boards-copy')).toBeOnTheScreen();
-
-    await press('dismiss-education');
     expect(screen.queryByTestId('metrics-education')).toBeNull();
+    expect(screen.queryByTestId('example-boards')).toBeNull();
   });
 
   it('records and edits manual check-ins through history', async () => {

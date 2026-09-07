@@ -120,8 +120,36 @@ describe('board detail states', () => {
     expect(screen.getByText(/Longest:/)).toBeOnTheScreen();
     expect(screen.getByText(/CONSISTENCY/)).toBeOnTheScreen();
     expect(screen.getByText(/of the last 30 days/)).toBeOnTheScreen();
-    expect(screen.getByText(/Current week:/)).toBeOnTheScreen();
+    expect(screen.getByText('THIS WEEK')).toBeOnTheScreen();
     expect(screen.getByTestId('board-heatmap')).toBeOnTheScreen();
+  });
+
+  it('shows real progress on day one and counts repeated check-ins as one active day', async () => {
+    mockClock.utcMs = Date.UTC(2026, 7, 31, 16, 0);
+    const boardId = await seedSimpleBoard('first day');
+    const deps = await core();
+    for (let count = 0; count < 3; count += 1) {
+      const created = await createCheckIn(deps, {
+        commandId: newCommandId(),
+        boardId,
+        source: 'app',
+      });
+      expect(created.ok).toBe(true);
+    }
+
+    renderRouter('src/app', { initialUrl: `/boards/${boardId}` });
+
+    expect(await screen.findByTestId('metrics-cards')).toBeOnTheScreen();
+    expect(screen.getByText('day in a row')).toBeOnTheScreen();
+    expect(screen.getByText('Longest: 1 day')).toBeOnTheScreen();
+    expect(screen.getByText('100%')).toBeOnTheScreen();
+    expect(screen.getByText('1 tracked day')).toBeOnTheScreen();
+    expect(screen.getByText('check-ins · 1 active day')).toBeOnTheScreen();
+    expect(screen.getByLabelText('2026-08-31: 3 check-ins, today')).toBeOnTheScreen();
+    expect(screen.getByLabelText('2026-09-01: upcoming')).toBeOnTheScreen();
+    expect(screen.getByTestId('month-progress-chart').props.accessibilityLabel).toContain('31: 3');
+    expect(screen.queryByTestId('metrics-education')).toBeNull();
+    expect(screen.queryByTestId('example-boards')).toBeNull();
   });
 
   it('restores an archived board from its read-only detail', async () => {

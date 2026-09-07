@@ -1,11 +1,12 @@
 import { Stack, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/foundation/app-text';
+import { Icon } from '@/components/foundation/icon';
 import {
   deleteBoard,
-  dismissMetricsEducation,
   restoreBoard,
   updateBoard,
 } from '@/core/domain/commands';
@@ -15,44 +16,23 @@ import {
   getBoardDependentCounts,
   getBoardHeatmap,
   getBoardSummary,
-  getMetricsEducationDismissed,
 } from '@/core/domain/queries';
-import { radius, radiusCurve, semanticColor, spacing } from '@/theme';
+import { radius, radiusCurve, semanticColor, semanticFallbacks, spacing } from '@/theme';
 
 import { deriveBoardColors } from './board-colors';
 import { HeatmapView } from './heatmap-view';
 import { InlineError, PrimaryButton, ProductPressable, useScheme } from '../ui';
 import { useProduct, useProductQuery } from '../product-store';
-
-function SummaryCard({ title, children }: { title: string; children: React.ReactNode }) {
-  const scheme = useScheme();
-  return (
-    <View
-      style={{
-        flex: 1,
-        backgroundColor: semanticColor('secondaryGroupedBackground', scheme),
-        borderRadius: radius.lg,
-        borderCurve: radiusCurve,
-        padding: spacing.lg,
-        gap: spacing.sm,
-        minHeight: 110,
-      }}
-    >
-      <AppText variant="footnote">{title.toUpperCase()}</AppText>
-      {children}
-    </View>
-  );
-}
+import { HabitProgress } from '../analytics';
 
 export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const scheme = useScheme();
   const { core, invalidate, nextCommandId } = useProduct();
   const board = useProductQuery((c) => getBoard(c, boardId), [boardId]);
   const summary = useProductQuery((c) => getBoardSummary(c, boardId), [boardId]);
   const heatmap = useProductQuery((c) => getBoardHeatmap(c, boardId), [boardId]);
-  const dismissed = useProductQuery((c) => getMetricsEducationDismissed(c), []);
-  const [examplesOpen, setExamplesOpen] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const confirmDelete = useCallback(async () => {
@@ -100,20 +80,12 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
   const record = board.value;
   const colors = deriveBoardColors(record.accentHex, scheme);
   const archived = record.archivedAt !== null;
-  const educationDismissed =
-    dismissed.status === 'ready' && dismissed.value.includes(record.id);
-  const metricsReady = summary.status === 'ready' && summary.value !== null && summary.value.metricsReady;
-  // a failed supporting query surfaces with a retry instead of silently
-  // hiding a section or misrendering the education card
   const supportError =
     summary.status === 'error'
       ? summary.error
       : heatmap.status === 'error'
         ? heatmap.error
-        : dismissed.status === 'error'
-          ? dismissed.error
-          : null;
-  const supportReady = summary.status === 'ready' && dismissed.status === 'ready';
+        : null;
 
   return (
     <View style={{ flex: 1, backgroundColor: semanticColor('groupedBackground', scheme) }}>
@@ -128,7 +100,7 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
                   label="Edit board"
                   testID="edit-board"
                 >
-                  <AppText selectable={false}>Edit</AppText>
+                  <Icon name="pencil" size={22} color={semanticFallbacks.label[scheme]} />
                 </ProductPressable>
               ),
         }}
@@ -193,62 +165,6 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
           </View>
         ) : null}
 
-        {supportReady && record.metricsEnabled && !metricsReady && !educationDismissed && !archived ? (
-          <View
-            style={{
-              backgroundColor: semanticColor('secondaryGroupedBackground', scheme),
-              borderRadius: radius.lg,
-              borderCurve: radiusCurve,
-              padding: spacing.lg,
-              gap: spacing.md,
-            }}
-            testID="metrics-education"
-          >
-            <AppText>
-              Metrics appear and become meaningful with more data. Stick with your goal and
-              Ripples will help you uncover useful insights.
-            </AppText>
-            <ProductPressable
-              onPress={() => setExamplesOpen((current) => !current)}
-              label="Look at example boards"
-              stretch
-              testID="example-boards"
-            >
-              <AppText variant="headline" selectable={false}>
-                Look at example boards
-              </AppText>
-            </ProductPressable>
-            {examplesOpen ? (
-              <AppText variant="subheadline" testID="example-boards-copy">
-                Example: a reading board checked in five days a week shows a growing streak, a
-                high consistency band, and weekday patterns after its first week. No sample data
-                is added to your own boards.
-              </AppText>
-            ) : null}
-            <ProductPressable
-              onPress={() => {
-                void dismissMetricsEducation(core, {
-                  commandId: nextCommandId(),
-                  boardId,
-                }).then((result) => {
-                  if (result.ok) {
-                    invalidate();
-                  } else {
-                    setActionError(result.error.message);
-                  }
-                });
-              }}
-              label="Dismiss metrics education"
-              stretch
-              testID="dismiss-education"
-            >
-              <AppText variant="subheadline" selectable={false}>
-                Dismiss
-              </AppText>
-            </ProductPressable>
-          </View>
-        ) : null}
-
         {!record.metricsEnabled && !archived ? (
           <View
             style={{
@@ -289,58 +205,16 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
           </View>
         ) : null}
 
-        {record.metricsEnabled && metricsReady && summary.status === 'ready' && summary.value ? (
-          <View style={{ gap: spacing.md }} testID="metrics-cards">
-            <View style={{ flexDirection: 'row', gap: spacing.md }}>
-              <SummaryCard title="Current streak">
-                <AppText variant="title1">{String(summary.value.currentStreak)}</AppText>
-                <AppText variant="footnote">{`Longest: ${summary.value.longestStreak}`}</AppText>
-              </SummaryCard>
-              <SummaryCard title="Consistency">
-                <AppText variant="title2">
-                  {summary.value.consistencyBand === null
-                    ? 'Not yet'
-                    : summary.value.consistencyBand === 'low'
-                      ? 'Low'
-                      : summary.value.consistencyBand === 'average'
-                        ? 'Average'
-                        : 'High'}
-                </AppText>
-                {summary.value.consistencyPercent !== null ? (
-                  <AppText variant="footnote">{`${Math.round(summary.value.consistencyPercent)}% of the last 30 days`}</AppText>
-                ) : null}
-              </SummaryCard>
-            </View>
-            <SummaryCard title="Current month">
-              <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm }}>
-                <AppText variant="title1">{String(summary.value.currentMonthCount)}</AppText>
-                <AppText variant="subheadline">check-ins</AppText>
-              </View>
-              <AppText variant="footnote">{`Current week: ${summary.value.currentWeekCount}`}</AppText>
-              <View
-                style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2, height: 42 }}
-                accessible
-                accessibilityLabel={`Daily counts this month: ${summary.value.currentMonthDaily.join(', ')}`}
-              >
-                {summary.value.currentMonthDaily.map((count, index) => (
-                  <View
-                    key={index}
-                    style={{
-                      flex: 1,
-                      height: Math.max(3, Math.min(42, count * 14)),
-                      borderRadius: 2,
-                      backgroundColor: count > 0 ? colors.accent : colors.inactiveBar,
-                    }}
-                  />
-                ))}
-              </View>
-            </SummaryCard>
-          </View>
+        {record.metricsEnabled && summary.status === 'ready' && summary.value ? (
+          <HabitProgress
+            summary={summary.value}
+            weeks={heatmap.status === 'ready' ? heatmap.value?.weeks : undefined}
+            colors={colors}
+          />
         ) : null}
 
         {actionError ? <InlineError message={actionError} testID="board-action-error" /> : null}
       </ScrollView>
-
 
       {!archived ? (
         <View
@@ -348,7 +222,9 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
-            padding: spacing.lg,
+            paddingHorizontal: spacing.lg,
+            paddingTop: spacing.md,
+            paddingBottom: Math.max(insets.bottom, spacing.md),
             gap: spacing.md,
           }}
           testID="board-actions"
@@ -356,11 +232,12 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
           <View
             style={{
               flexDirection: 'row',
-              gap: spacing.xl,
+              gap: spacing.sm,
               backgroundColor: semanticColor('secondaryGroupedBackground', scheme),
               borderRadius: radius.capsule,
               borderCurve: radiusCurve,
-              paddingHorizontal: spacing.xl,
+              paddingHorizontal: spacing.sm,
+              paddingVertical: 4,
             }}
           >
             <ProductPressable
@@ -369,21 +246,21 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
               label="Analytics"
               testID="open-analytics"
             >
-              <AppText selectable={false}>Analytics</AppText>
+              <Icon name="analytics" size={23} color={semanticFallbacks.label[scheme]} />
             </ProductPressable>
             <ProductPressable
               onPress={() => router.push(`/boards/${record.id}/check-ins`)}
               label="Check-Ins"
               testID="open-check-ins"
             >
-              <AppText selectable={false}>Check-Ins</AppText>
+              <Icon name="checkIns" size={23} color={semanticFallbacks.label[scheme]} />
             </ProductPressable>
             <ProductPressable
               onPress={() => router.push(`/boards/${record.id}/journal`)}
               label="Journal"
               testID="open-journal"
             >
-              <AppText selectable={false}>Journal</AppText>
+              <Icon name="journal" size={23} color={semanticFallbacks.label[scheme]} />
             </ProductPressable>
           </View>
           <ProductPressable
@@ -405,18 +282,7 @@ export function BoardDetailScreen({ boardId }: { boardId: BoardId }) {
                 justifyContent: 'center',
               }}
             >
-              <AppText
-                selectable={false}
-                style={{
-                  color: colors.onAccent,
-                  fontSize: 26,
-                  // the glyph centers optically only with a tight line box
-                  lineHeight: 28,
-                  textAlign: 'center',
-                }}
-              >
-                +
-              </AppText>
+              <Icon name="add" size={27} color={colors.onAccent} />
             </View>
           </ProductPressable>
         </View>
