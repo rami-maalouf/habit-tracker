@@ -1,6 +1,7 @@
 import { Stack, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, ScrollView, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/foundation/app-text';
 import { Icon } from '@/components/foundation/icon';
@@ -25,6 +26,7 @@ const UNDO_WINDOW_MS = 5000;
 
 export function BoardsHomeScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const scheme = useScheme();
   const { core, invalidate, nextCommandId } = useProduct();
   const boards = useProductQuery((c) => getHomeBoardProjection(c), []);
@@ -211,13 +213,15 @@ export function BoardsHomeScreen() {
         <View
           style={{
             padding: spacing.lg,
+            paddingBottom: Math.max(insets.bottom, spacing.lg),
             backgroundColor: semanticColor('secondaryGroupedBackground', scheme),
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
+            gap: spacing.md,
           }}
         >
-          <AppText variant="subheadline">{`Checked in to ${undo.boardTitle}`}</AppText>
+          <AppText variant="subheadline" style={{ flex: 1, minWidth: 0 }}>{`Checked in to ${undo.boardTitle}`}</AppText>
           <ProductPressable onPress={undoLast} label="Undo check-in" testID="undo-check-in">
             <AppText variant="headline" selectable={false}>
               Undo
