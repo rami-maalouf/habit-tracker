@@ -1,12 +1,12 @@
 import { Stack, useNavigation, useRouter } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, ScrollView, Switch, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, Keyboard, ScrollView, Switch, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
 import { archiveBoard, deleteBoard, updateBoard } from '@/core/domain/commands';
 import { createBoardWithReminders } from '@/core/domain/create-board-with-reminders';
-import { boardPalette, boardSymbolAllowlist } from '@/core/domain/entities';
+import { boardPalette } from '@/core/domain/entities';
 import type { BoardId } from '@/core/domain/ids';
 import { setReminderEnabled } from '@/core/domain/reminder-commands';
 import type { DomainError } from '@/core/domain/result';
@@ -19,6 +19,8 @@ import { BoardSymbol, SevenDayStrip, deriveBoardColors } from '../boards';
 import { formatMinuteOfDay, weekdaySummary } from '../reminders';
 import { InlineError, PrimaryButton, ProductPressable, useScheme } from '../ui';
 import { useProduct, useProductQuery } from '../product-store';
+import { getBoardIcon } from '../boards/board-icon-catalog';
+import { BoardIconPicker } from './board-icon-picker';
 import type { BoardDraft } from './draft-store';
 import {
   draftFromBoard,
@@ -180,7 +182,6 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
   const [conflict, setConflict] = useState(false);
   const [saving, setSaving] = useState(false);
   const [symbolPickerOpen, setSymbolPickerOpen] = useState(false);
-  const [symbolSearch, setSymbolSearch] = useState('');
   const [customColorOpen, setCustomColorOpen] = useState(false);
   // set before a deliberate exit (save, archive, delete, confirmed discard)
   // so the removal guard lets that navigation through
@@ -339,14 +340,6 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
     ]);
   }, [boardId, core, editing, invalidate, nextCommandId, router]);
 
-  const filteredSymbols = useMemo(
-    () =>
-      boardSymbolAllowlist.filter((symbol) =>
-        symbol.toLowerCase().includes(symbolSearch.trim().toLowerCase()),
-      ),
-    [symbolSearch],
-  );
-
   if (editing && existing.status === 'error') {
     return (
       <View style={{ flex: 1, justifyContent: 'center', padding: spacing.xl, gap: spacing.lg }}>
@@ -419,20 +412,24 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
         {/* live preview uses the same renderers as saved data */}
         <FormRow>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
-            <BoardSymbol symbol={draft.symbol} color={colors.accent} />
+            <BoardSymbol symbol={draft.symbol} color={colors.accent} testID="board-symbol-preview" />
             <AppText variant="headline" numberOfLines={1} style={{ flexShrink: 1 }} selectable={false}>
               {draft.title.trim().length === 0 ? 'New board' : draft.title}
             </AppText>
             <View style={{ flex: 1 }} />
-            <SevenDayStrip strip={[0, 1, 0, 1, 1, 0, 1]} colors={colors} barHeight={22} />
+            <SevenDayStrip strip={[0, 1, 0, 1, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1]} colors={colors} barHeight={22} barWidth={4} barGap={3} />
           </View>
         </FormRow>
 
         <FormRow>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
             <ProductPressable
-              onPress={() => setSymbolPickerOpen((current) => !current)}
-              label="Choose symbol"
+              onPress={() => {
+                Keyboard.dismiss();
+                setSymbolPickerOpen(true);
+              }}
+              label={`Choose icon, ${getBoardIcon(draft.symbol)?.label ?? 'current icon'}`}
+              hint="Opens the icon picker"
               testID="open-symbol-picker"
             >
               <BoardSymbol symbol={draft.symbol} color={colors.accent} size={28} />
@@ -452,48 +449,6 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
               testID="board-title-input"
             />
           </View>
-          {symbolPickerOpen ? (
-            <View style={{ gap: spacing.sm }} testID="symbol-picker">
-              <TextInput
-                accessibilityLabel="Search symbols"
-                placeholder="Search symbols"
-                placeholderTextColor={semanticColor('secondaryLabel', scheme) as string}
-                value={symbolSearch}
-                onChangeText={setSymbolSearch}
-                style={{ minHeight: minimumTouchTarget, color: semanticColor('label', scheme) as string }}
-                testID="symbol-search"
-              />
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
-                {filteredSymbols.map((symbol) => (
-                  <ProductPressable
-                    key={symbol}
-                    onPress={() => {
-                      updateDraft({ symbol });
-                      setSymbolPickerOpen(false);
-                    }}
-                    label={`Symbol ${symbol}`}
-                    selected={draft.symbol === symbol}
-                    testID={`symbol-${symbol}`}
-                  >
-                    <View
-                      style={{
-                        width: minimumTouchTarget,
-                        height: minimumTouchTarget,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        borderRadius: radius.md,
-                        borderCurve: radiusCurve,
-                        borderWidth: draft.symbol === symbol ? 2 : 0,
-                        borderColor: colors.accent,
-                      }}
-                    >
-                      <BoardSymbol symbol={symbol} color={colors.accent} />
-                    </View>
-                  </ProductPressable>
-                ))}
-              </View>
-            </View>
-          ) : null}
         </FormRow>
 
         <FormRow>
@@ -651,6 +606,16 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
           </View>
         ) : null}
       </ScrollView>
+      <BoardIconPicker
+        isPresented={symbolPickerOpen}
+        symbol={draft.symbol}
+        accent={colors.accent}
+        onSelect={(symbol) => {
+          updateDraft({ symbol });
+          setSymbolPickerOpen(false);
+        }}
+        onDismiss={() => setSymbolPickerOpen(false)}
+      />
     </View>
   );
 }

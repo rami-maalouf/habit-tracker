@@ -13,6 +13,18 @@ import {
 
 type Children = { children?: ReactNode };
 
+export function BottomSheet({ children, isPresented, onDismiss, testID }: Children & {
+  isPresented: boolean;
+  onDismiss: () => void;
+  testID?: string;
+}) {
+  return isPresented ? <View testID={testID} onAccessibilityEscape={onDismiss}>{children}</View> : null;
+}
+
+export function RNHostView({ children }: Children) {
+  return <View>{children}</View>;
+}
+
 export function Host({ children }: Children) {
   return <View testID="expo-ui-host">{children}</View>;
 }

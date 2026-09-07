@@ -102,7 +102,7 @@ export const boardPalette = [
   { name: 'blue', hex: '#70A7FF' },
 ] as const;
 
-// versioned product data: the exact initial sf symbol allowlist
+// append new icons so existing saved symbols and default indices stay stable
 export const boardSymbolAllowlist = [
   'calendar',
   'star.fill',
@@ -136,6 +136,38 @@ export const boardSymbolAllowlist = [
   'phone.fill',
   'person.2.fill',
   'pawprint.fill',
+  'mouth.fill',
+  'bandage.fill',
+  'lungs.fill',
+  'figure.pool.swim',
+  'figure.mind.and.body',
+  'soccerball',
+  'basketball.fill',
+  'mug.fill',
+  'waterbottle.fill',
+  'birthday.cake.fill',
+  'fish.fill',
+  'magnifyingglass',
+  'checklist',
+  'guitars.fill',
+  'camera.fill',
+  'paintpalette.fill',
+  'scissors',
+  'keyboard.fill',
+  'mic.fill',
+  'house.fill',
+  'sparkles',
+  'suitcase.fill',
+  'gift.fill',
+  'cart.fill',
+  'tree.fill',
+  'mountain.2.fill',
+  'tent.fill',
+  'globe.americas.fill',
+  'airplane',
+  'location.north.circle.fill',
+  'sun.haze.fill',
+  'umbrella.fill',
 ] as const;
 
 export const boardLimits = {
