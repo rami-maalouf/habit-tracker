@@ -65,8 +65,9 @@
    The final debugger registry was empty after an external teardown, so it is
    not claimed as an uninterrupted session-wide clean-log result.
 7. Concurrent board, analytics, navigation, and icon-picker changes appeared
-   during this work. They are preserved and excluded from the scoped commits and
-   isolated gate. A combined working-tree validation must pass before fork closure.
+   during this work. They were preserved and excluded from the scoped reminder
+   commit and isolated gate. The other session subsequently committed them;
+   combined validation passed 490 tests. Their later spec amendment is recorded below.
 
 ### 3.8 - repository privacy audit (partial)
 
@@ -80,6 +81,50 @@
 3. This is only the privacy portion of fork readiness. Product/native approvals,
    signed-device acceptance, and combined working-tree validation remain pending;
    `ripples-v1-fork-point` has not been created.
+
+### 3.3 - artwork drafts and current gate
+
+1. Created `assets/images/alternate-icons/midnight.png` and `paper.png`, with a
+   provenance/status README. They are opaque 1254-pixel source images and remain
+   unregistered pending human approval and native asset-catalog integration.
+2. The other session committed its concurrent UI work as `d95f53b`, `5347144`, and
+   `6f41870`. Combined `bun run validate` now passes: 490 tests across 36 suites,
+   all required coverage gates, lint, and typecheck. The pre-fork changes have
+   independent review; this entry does not claim independent review of that other
+   session's UI work. Combined log: `.artifacts/pre-fork/combined-validate.log`.
+3. This is a progress checkpoint, not pre-fork closure. Items 3.1, 3.2, 3.3 native
+   integration, 3.4, 3.7, and the remaining 3.8 acceptance still need completion.
+4. The other session subsequently recorded its user-authorized UI amendments in
+   `SPEC-ripples-product.md` and `tasks/ui-polish-checkpoint.md` (`2481feb`), including
+   fourteen-day home strips and the expanded symbol allowlist.
+
+### 3.3 - alternate-icon infrastructure (partial)
+
+1. Added native and platform adapters inside the existing RipplesApple module,
+   safe fallbacks for older binaries and non-iOS platforms, and guarded selection
+   in Settings. The persisted choice changes only after native confirmation.
+   Platform failure keeps the previous choice; a settings-write failure attempts
+   native rollback and provides a retry, including when rollback itself fails.
+2. The adapter requires both expected icon registrations before enabling the
+   three-choice UI. Independent GPT-5.6 Sol review caught and verified the fix for
+   a partial-registration case that had incorrectly enabled a missing choice.
+3. Validation: 506 tests across 38 suites, all required coverage gates, lint and
+   typecheck passed; seven compiled Swift configuration checks passed. Sol's
+   focused review passed 37 JS/UI tests plus the Swift checks, with no remaining
+   selection or configuration findings. Native build passed on the simulator.
+4. Argent confirmed the native methods exist and support returns false with no
+   artwork registered. The real settings screen shows unavailable choices;
+   screenshot `.artifacts/pre-fork/icons/unavailable.png`. Direct native selection
+   of an unregistered name was rejected. Real switching and relaunch persistence
+   remain unproven until approved artwork is registered in the generated catalog.
+5. Generated artwork remains a draft. No plugin asset registration, alternate
+   icon entitlement/signing changes, or human visual approval is claimed here.
+6. Live native rejection exposed an SDK 57 two-string Promise rejection that
+   lost its reason. Typed exceptions now provide explicit codes, reasons, and
+   sanitized debug messages. Independent Sol review approved the correction;
+   final rebuild passed, and Argent verified `supported: false`,
+   `ERR_ALTERNATE_ICON_UNSUPPORTED`, and the exact intended safe message.
+   Final Expo Doctor passed 21/21; generated native files remain untracked.
 
 ### Decisions recorded from the current request
 

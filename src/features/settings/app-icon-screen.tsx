@@ -1,21 +1,83 @@
 import { Stack } from 'expo-router';
+import { useEffect, useRef, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
+import { setSelectedIcon } from '@/core/domain/commands';
+import type { SelectedIcon } from '@/core/domain/entities';
+import { getAppSettings } from '@/core/domain/queries';
+import { setAlternateIcon, supportsAlternateIcons } from '@/platform/alternate-icons';
 import { radius, radiusCurve, semanticColor, spacing } from '@/theme';
 
-import { useScheme } from '../ui';
+import { useProduct, useProductQuery } from '../product-store';
+import { InlineError, PrimaryButton, ProductPressable, useScheme } from '../ui';
 
 const ICON_PREVIEWS = [
-  { name: 'Default', light: '#78D98B', dark: '#111111' },
-  { name: 'Midnight', light: '#111111', dark: '#78D98B' },
-  { name: 'Paper', light: '#F2F2F7', dark: '#3A3A3C' },
-];
+  { id: 'default', name: 'Default', light: '#78D98B', dark: '#111111' },
+  { id: 'midnight', name: 'Midnight', light: '#111111', dark: '#78D98B' },
+  { id: 'paper', name: 'Paper', light: '#F2F2F7', dark: '#3A3A3C' },
+] as const;
 
-// alternate icons persist only after the platform confirms the switch; the
-// native adapter arrives with the local module, so selection stays off
+function nativeName(icon: SelectedIcon) {
+  return icon === 'default' ? null : icon;
+}
+
 export function AppIconScreen() {
   const scheme = useScheme();
+  const { core, invalidate, nextCommandId } = useProduct();
+  const settings = useProductQuery(getAppSettings, []);
+  const [availability, setAvailability] = useState<'loading' | 'supported' | 'unsupported' | 'error'>('loading');
+  const [revision, setRevision] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const [failure, setFailure] = useState<{ icon: SelectedIcon; message: string } | null>(null);
+  const selected = settings.status === 'ready' ? settings.value?.selectedIcon : undefined;
+
+  useEffect(() => {
+    let cancelled = false;
+    supportsAlternateIcons().then(
+      (supported) => { if (!cancelled) setAvailability(supported ? 'supported' : 'unsupported'); },
+      () => { if (!cancelled) setAvailability('error'); },
+    );
+    return () => { cancelled = true; };
+  }, [revision]);
+
+  async function choose(icon: SelectedIcon) {
+    if (busyRef.current || availability !== 'supported' || selected === undefined) return;
+    busyRef.current = true;
+    setBusy(true);
+    setFailure(null);
+    const previous = selected;
+    let platformChanged = false;
+    try {
+      await setAlternateIcon(nativeName(icon));
+      platformChanged = true;
+      const result = await setSelectedIcon(core, { commandId: nextCommandId(), icon });
+      if (!result.ok) throw new Error('icon setting could not be saved');
+      invalidate();
+    } catch {
+      let restored = true;
+      if (platformChanged) {
+        try { await setAlternateIcon(nativeName(previous)); } catch { restored = false; }
+      }
+      setFailure({
+        icon,
+        message: restored
+          ? 'The app icon could not be changed. Try again.'
+          : 'The icon changed, but its setting could not be saved. Try again to finish the change.',
+      });
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }
+
+  function retryAvailability() {
+    setAvailability('loading');
+    setRevision((value) => value + 1);
+    invalidate();
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: semanticColor('groupedBackground', scheme) }}>
       <Stack.Screen options={{ title: 'App Icon' }} />
@@ -23,9 +85,16 @@ export function AppIconScreen() {
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg }}
       >
-        <View style={{ flexDirection: 'row', gap: spacing.lg }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: spacing.lg }}>
           {ICON_PREVIEWS.map((icon) => (
-            <View key={icon.name} style={{ alignItems: 'center', gap: spacing.sm }}>
+            <ProductPressable
+              key={icon.id}
+              label={`Use ${icon.name} icon`}
+              selected={selected === icon.id}
+              disabled={availability !== 'supported' || selected === undefined || busy}
+              onPress={() => { void choose(icon.id); }}
+              style={{ alignItems: 'center', gap: spacing.sm }}
+            >
               <View
                 accessible
                 accessibilityLabel={`${icon.name} icon preview`}
@@ -52,13 +121,28 @@ export function AppIconScreen() {
                 />
               </View>
               <AppText variant="footnote">{icon.name}</AppText>
-            </View>
+              {selected === icon.id ? <AppText variant="footnote">Selected</AppText> : null}
+            </ProductPressable>
           ))}
         </View>
-        <AppText variant="footnote" testID="app-icon-interim">
-          Choosing an alternate icon arrives with a native update. The previews show what will be
-          available.
-        </AppText>
+        {availability === 'unsupported' ? (
+          <AppText variant="footnote" testID="app-icon-interim">
+            Alternate icons are not available yet.
+          </AppText>
+        ) : null}
+        {busy ? <AppText variant="footnote">Changing app icon…</AppText> : null}
+        {availability === 'error' || settings.status === 'error' || (settings.status === 'ready' && settings.value === null) ? (
+          <View style={{ gap: spacing.sm }}>
+            <InlineError message="App icons could not be loaded. Try again." />
+            <PrimaryButton title="Retry app icons" onPress={retryAvailability} />
+          </View>
+        ) : null}
+        {failure ? (
+          <View style={{ gap: spacing.sm }}>
+            <InlineError message={failure.message} />
+            <PrimaryButton title="Retry icon change" disabled={busy} onPress={() => { void choose(failure.icon); }} />
+          </View>
+        ) : null}
       </ScrollView>
     </View>
   );

@@ -7,6 +7,14 @@ public class RipplesAppleModule: Module {
   public func definition() -> ModuleDefinition {
     Name("RipplesApple")
 
+    AsyncFunction("supportsAlternateIcons") { () -> Bool in
+      AlternateIconAdapter.supportsAlternateIcons()
+    }.runOnQueue(.main)
+
+    AsyncFunction("setAlternateIcon") { (name: String?, promise: Promise) in
+      AlternateIconAdapter.setAlternateIcon(name, promise: promise)
+    }.runOnQueue(.main)
+
     Events("onSignificantTimeChange")
 
     OnStartObserving("onSignificantTimeChange") {
