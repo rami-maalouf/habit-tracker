@@ -18,6 +18,19 @@
    Create Board/reminder sheets. Device `93EEF062-B4DC-4989-AF77-CF47EE2A9816`,
    Metro 8082. Evidence stays under `.artifacts/pre-fork/`.
 
+### SDK 57 validation repair
+
+1. Expo Doctor initially failed its SDK patch alignment check. Expo Install
+   aligned eleven Expo packages to the SDK 57 recommendations; a frozen-lockfile
+   reinstall removed duplicate native package copies. No SDK major upgrade.
+2. Independent GPT-5.6 Luna changelog inspection found no new product API migration
+   requirement. Full isolated validation passed (484 tests and all coverage gates).
+3. Generated `ios/` was regenerated through Expo prebuild and remains untracked.
+   The development client built successfully and ran on the iPhone simulator;
+   final `bunx expo-doctor` passed 21/21. Build and doctor logs are under
+   `.artifacts/pre-fork/`. The build emitted two upstream build-phase warnings,
+   with zero errors.
+
 ### Decisions recorded from the current request
 
 - Apple developer membership exists; the signing team id, container provisioning,
