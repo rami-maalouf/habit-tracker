@@ -31,6 +31,43 @@
    `.artifacts/pre-fork/`. The build emitted two upstream build-phase warnings,
    with zero errors.
 
+### 3.5 - independent reminder review closure
+
+1. Independent GPT-5.6 Sol review found five issues: missing native requests were
+   not repaired; permission/native failures escaped the domain envelope; new-board
+   reminders were not fully validated or committed atomically; request payloads
+   stayed stale after edits; significant-time events had no native listener.
+2. Added pending-request payload reconciliation and typed, sanitized errors for
+   every scheduler operation. Disabling does not require notification permission.
+   Board and reminder creation now shares one exclusive transaction, receipt,
+   projection/outbox envelope, and compensation for scheduled native requests
+   when the database rolls back. All drafts validate before prompting or writing.
+3. Scaffolded and reviewed the single allowed module, `modules/ripples-apple`,
+   retaining only the iOS module and its license. The significant-time listener
+   invalidates the provider, reconciles once, and rearms the day-boundary timer.
+   Old binaries and non-iOS platforms have a safe no-op adapter.
+4. Red evidence: the user-flow test initially accepted a 181-character draft;
+   native adapter regressions initially leaked injected native error details.
+   On-device reproduction was attempted before the fix but interrupted by a
+   stale development client. The native acceptance check after rebuilding passed:
+   181 characters showed the 180-character error and retained the editor;
+   correction to 180 returned the reminder draft row; discard retained existing
+   boards. Screenshot: `.artifacts/pre-fork/reminders/invalid-draft.png`.
+5. Independent final GPT-5.6 Sol verdict: APPROVE, no required findings. Reviewer
+   ran six suites (115 tests), typechecked, inspected the isolated full validation
+   (484 tests across 35 suites, core 100 percent on all metrics), and reviewed
+   listener lifecycle and transaction compensation. The verifier was not an author.
+6. Native build passed on iPhone 17 Pro, iOS 27, device
+   `93EEF062-B4DC-4989-AF77-CF47EE2A9816`, Metro 8082. Argent read-only evaluation
+   confirmed the RipplesApple module is loaded and has one significant-time
+   listener. Actual OS significant-time delivery has not been stimulated;
+   that path has source, native-build, JS contract, and provider-test evidence.
+   The final debugger registry was empty after an external teardown, so it is
+   not claimed as an uninterrupted session-wide clean-log result.
+7. Concurrent board, analytics, navigation, and icon-picker changes appeared
+   during this work. They are preserved and excluded from the scoped commits and
+   isolated gate. A combined working-tree validation must pass before fork closure.
+
 ### Decisions recorded from the current request
 
 - Apple developer membership exists; the signing team id, container provisioning,
@@ -124,7 +161,7 @@ Evidence images live under `.artifacts/` or system temp paths and stay out of Gi
 5. Notable findings and decisions: P1's archive/delete paths deleted `reminder_schedule` rows before anything could cancel the native requests they identified - both now keep the rows so the reconciler cancels through stored identifiers (orphan cleanup covers board deletes). A denied first save preserves the validated reminder disabled with scheduleState `denied` per the spec and never re-prompts. Permission prompts run before the exclusive transaction. Reconcile state changes never enter the outbox (device-local). The `ui` barrel's require cycle (index -> recovery -> index) was split into `primitives.tsx`.
 6. Argent evidence (target `93EEF062-B4DC-4989-AF77-CF47EE2A9816`), interactive type: edit board -> Add reminder opens the native half sheet (weekday chips M-S, time pill 9:00 AM, message placeholder "Check in to morning pages", repeat footnote); deselected Sat/Sun; save triggered the real iOS notification permission dialog (just-in-time), Allow scheduled the reminder; the edit sheet shows the row "9:00 AM / Mon, Tue, Wed, Thu, Fri" with an enabled switch (row layout stacked after a cramped first render); Settings > Notifications reports "Allowed" and "Enabled reminders: 1" with no schedule errors. Log registry: two stale fast-refresh reference errors from mid-session edits (absent after the clean reload) and upstream RNS/AnimatedValue warnings; the authored require-cycle warning was fixed.
 7. Deferred within stage: significant-time-change reconcile trigger relies on cold-start/foreground reruns until a native listener lands with the widgets stage; DST repeated-hour behavior is delegated to the platform per spec.
-8. Commits and pushes: `a699560`, `4aa8308`, `8d576f2`, `2eb81b6`, `4313d04`, all pushed to `origin/main`. GPT-5.6 Sol review of this stage: pending (bounded run follows this checkpoint).
+8. Commits and pushes: `a699560`, `4aa8308`, `8d576f2`, `2eb81b6`, `4313d04`, all pushed to `origin/main`. GPT-5.6 Sol review completed 2026-09-07: APPROVE after remediation; see pre-fork item 3.5 above.
 
 ### P7 - iOS Home Screen widgets
 

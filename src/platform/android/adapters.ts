@@ -34,6 +34,9 @@ export const androidReminderAdapter: ReminderScheduler & { readiness: AdapterAva
   async pendingIdentifiers() {
     return [];
   },
+  async pendingRequests() {
+    return [];
+  },
   async schedule(_request: ReminderScheduleRequest): Promise<string> {
     throw new Error('Reminders are not scheduled on Android in this release.');
   },

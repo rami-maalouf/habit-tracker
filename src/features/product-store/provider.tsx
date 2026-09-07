@@ -16,6 +16,7 @@ import {
   reminderScheduler,
 } from '@/platform/notifications';
 import { addWidgetQuickActionListener, refreshWidgets } from '@/platform/widgets';
+import { addSignificantTimeChangeListener } from '@/platform/time-change';
 import { nextWidgetRefreshUtc } from '@/features/widgets/widget-props';
 import { spacing } from '@/theme';
 
@@ -106,9 +107,11 @@ export function ProductProvider({ children, coreOverride }: ProductProviderProps
     reconcile();
   }, [reconcile, version]);
 
-  // ios exposes no js significant-time-change event; a timer at the next
-  // local day boundary covers the date rolling over while the app runs,
-  // and the foreground listener covers everything else
+  // native clock changes invalidate queries and rearm the day-boundary timer.
+  // the existing version effect performs one reconciliation for the event.
+  useEffect(() => addSignificantTimeChangeListener(invalidate), [invalidate]);
+
+  // the timer also covers platforms without a native time-change adapter.
   useEffect(() => {
     if (state.status !== 'ready') {
       return;
@@ -122,8 +125,6 @@ export function ProductProvider({ children, coreOverride }: ProductProviderProps
       );
       timer = setTimeout(() => {
         invalidate();
-        reconcile();
-        arm();
       }, delay);
     };
     arm();
@@ -132,7 +133,7 @@ export function ProductProvider({ children, coreOverride }: ProductProviderProps
         clearTimeout(timer);
       }
     };
-  }, [invalidate, reconcile, state]);
+  }, [invalidate, state, version]);
 
   // out-of-process writers (widgets, automations, sync) mutate the same
   // database; returning to the foreground refreshes every mounted query.

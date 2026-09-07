@@ -11,11 +11,11 @@ import {
   updateReminderRow,
 } from '../persistence/repositories/reminders';
 import { appendOutbox } from '../persistence/repositories/support';
-import type { CommandDeps } from './commands';
-import { runCommand } from './commands';
-import type { Reminder, ReminderScheduleState } from './entities';
+import type { CommandContext, CommandDeps } from './commands';
+import { replayCommand, runCommand } from './commands';
+import type { Board, Reminder, ReminderScheduleState } from './entities';
 import type { BoardId, CommandId, ReminderId } from './ids';
-import type { ReminderScheduler } from './ports';
+import type { ReminderAuthorization, ReminderScheduler, ReminderScheduleRequest } from './ports';
 import type { DomainResult } from './result';
 import { err, ok } from './result';
 import {
@@ -34,15 +34,25 @@ export function weekdaysInMask(mask: number): number[] {
 
 // the just-in-time permission point: the system prompt runs before the
 // exclusive transaction so the database is never held open on user input
-async function resolveAuthorization(
+export async function resolveReminderAuthorization(
   scheduler: ReminderScheduler,
   wantsSchedule: boolean,
-): Promise<'granted' | 'denied' | 'undetermined'> {
-  const current = await scheduler.authorization();
-  if (!wantsSchedule || current !== 'undetermined') {
-    return current;
+  requestIfUndetermined = true,
+): Promise<DomainResult<ReminderAuthorization>> {
+  if (!wantsSchedule) {
+    return ok('undetermined');
   }
-  return scheduler.requestAuthorization();
+  try {
+    const current = await scheduler.authorization();
+    if (!requestIfUndetermined || current !== 'undetermined') {
+      return ok(current);
+    }
+    return ok(await scheduler.requestAuthorization());
+  } catch {
+    return err('platform', 'Notification permission could not be checked. Try again.', {
+      retryable: true,
+    });
+  }
 }
 
 type ScheduleOutcome = {
@@ -53,7 +63,7 @@ type ScheduleOutcome = {
 // replace-before-cancel: new requests are scheduled first, and only a
 // fully successful replacement cancels the previous identifiers. on any
 // failure the new requests are cancelled and the old schedule stands.
-async function applyReminderSchedule(
+export async function applyReminderSchedule(
   tx: SqlExecutor,
   scheduler: ReminderScheduler,
   input: {
@@ -139,6 +149,12 @@ export async function createReminder(
   deps: ReminderCommandDeps,
   input: CreateReminderInput,
 ): Promise<DomainResult<{ reminderId: ReminderId; scheduleState: ReminderScheduleState }>> {
+  const replay = await replayCommand<{ reminderId: ReminderId; scheduleState: ReminderScheduleState }>(
+    deps.db, input.commandId,
+  );
+  if (replay !== null) {
+    return replay;
+  }
   const mask = validateWeekdaysMask(input.weekdaysMask);
   if (!mask.ok) {
     return mask;
@@ -160,47 +176,73 @@ export async function createReminder(
   if (preflight.archivedAt !== null) {
     return err('archived', 'Restore the board to change its reminders.');
   }
-  const authorization = await resolveAuthorization(deps.scheduler, input.enabled);
-  // a denied first save preserves the validated reminder disabled with a
-  // denied schedule state instead of prompting repeatedly
-  const enabled = input.enabled && authorization === 'granted';
-  return runCommand(deps, input.commandId, async ({ tx, now, stamp }) => {
-    const board = await getBoardById(tx, input.boardId);
+  const authorization = await resolveReminderAuthorization(deps.scheduler, input.enabled);
+  if (!authorization.ok) {
+    return authorization;
+  }
+  return runCommand(deps, input.commandId, async (context) => {
+    const board = await getBoardById(context.tx, input.boardId);
     if (!board) {
       return err('not_found', 'This board no longer exists.');
     }
     if (board.archivedAt !== null) {
       return err('archived', 'Restore the board to change its reminders.');
     }
-    const reminderId = deps.ids.uuid() as ReminderId;
-    const mutationStamp = stamp();
-    const reminder: Reminder = {
-      id: reminderId,
-      boardId: board.id,
+    return ok(await createReminderInTransaction(deps, context, {
+      board,
       weekdaysMask: mask.value,
       minuteOfDay: minute.value,
       message: message.value,
-      enabled,
-      nativeIdentifiers: [],
-      scheduleState: 'pending',
-      lastScheduleError: null,
-      createdAt: now,
-      updatedAt: now,
-      mutationStamp,
-      deletedAt: null,
-    };
-    await insertReminder(tx, reminder);
-    const outcome = await applyReminderSchedule(tx, deps.scheduler, {
-      reminder,
-      boardTitle: board.title,
-      shouldSchedule: enabled,
-      authorization,
-      wantsSchedule: input.enabled,
-    });
-    await updateReminderRow(tx, { ...reminder, ...outcome });
-    await appendOutbox(tx, 'reminder', reminderId, mutationStamp, now);
-    return ok({ reminderId, scheduleState: outcome.scheduleState });
+      enabled: input.enabled,
+      authorization: authorization.value,
+    }));
   });
+}
+
+// callers validate the fields and resolve permission before entering the
+// shared envelope, so board drafts and standalone saves use one mutation
+export async function createReminderInTransaction(
+  deps: ReminderCommandDeps,
+  { tx, now, stamp }: CommandContext,
+  input: {
+    board: Board;
+    weekdaysMask: number;
+    minuteOfDay: number;
+    message: string | null;
+    enabled: boolean;
+    authorization: ReminderAuthorization;
+  },
+): Promise<{ reminderId: ReminderId; scheduleState: ReminderScheduleState }> {
+  const reminderId = deps.ids.uuid() as ReminderId;
+  const mutationStamp = stamp();
+  // denial preserves the validated reminder disabled with its denied state
+  const enabled = input.enabled && input.authorization === 'granted';
+  const reminder: Reminder = {
+    id: reminderId,
+    boardId: input.board.id,
+    weekdaysMask: input.weekdaysMask,
+    minuteOfDay: input.minuteOfDay,
+    message: input.message,
+    enabled,
+    nativeIdentifiers: [],
+    scheduleState: 'pending',
+    lastScheduleError: null,
+    createdAt: now,
+    updatedAt: now,
+    mutationStamp,
+    deletedAt: null,
+  };
+  await insertReminder(tx, reminder);
+  const outcome = await applyReminderSchedule(tx, deps.scheduler, {
+    reminder,
+    boardTitle: input.board.title,
+    shouldSchedule: enabled,
+    authorization: input.authorization,
+    wantsSchedule: input.enabled,
+  });
+  await updateReminderRow(tx, { ...reminder, ...outcome });
+  await appendOutbox(tx, 'reminder', reminderId, mutationStamp, now);
+  return { reminderId, scheduleState: outcome.scheduleState };
 }
 
 export type UpdateReminderInput = {
@@ -216,6 +258,10 @@ export async function updateReminder(
   deps: ReminderCommandDeps,
   input: UpdateReminderInput,
 ): Promise<DomainResult<{ scheduleState: ReminderScheduleState }>> {
+  const replay = await replayCommand<{ scheduleState: ReminderScheduleState }>(deps.db, input.commandId);
+  if (replay !== null) {
+    return replay;
+  }
   const mask = validateWeekdaysMask(input.weekdaysMask);
   if (!mask.ok) {
     return mask;
@@ -228,7 +274,11 @@ export async function updateReminder(
   if (!message.ok) {
     return message;
   }
-  const authorization = await deps.scheduler.authorization();
+  const authorizationResult = await resolveReminderAuthorization(deps.scheduler, true, false);
+  if (!authorizationResult.ok) {
+    return authorizationResult;
+  }
+  const authorization = authorizationResult.value;
   return runCommand(deps, input.commandId, async ({ tx, now, stamp }) => {
     const existing = await getReminderById(tx, input.reminderId);
     if (!existing) {
@@ -274,6 +324,12 @@ export async function setReminderEnabled(
   deps: ReminderCommandDeps,
   input: { commandId: CommandId; reminderId: ReminderId; enabled: boolean },
 ): Promise<DomainResult<{ scheduleState: ReminderScheduleState; enabled: boolean }>> {
+  const replay = await replayCommand<{ scheduleState: ReminderScheduleState; enabled: boolean }>(
+    deps.db, input.commandId,
+  );
+  if (replay !== null) {
+    return replay;
+  }
   // check the target before consuming the just-in-time prompt
   const preflight = await getReminderById(deps.db, input.reminderId);
   if (!preflight) {
@@ -286,7 +342,11 @@ export async function setReminderEnabled(
   if (preflightBoard.archivedAt !== null) {
     return err('archived', 'Restore the board to change its reminders.');
   }
-  const authorization = await resolveAuthorization(deps.scheduler, input.enabled);
+  const authorizationResult = await resolveReminderAuthorization(deps.scheduler, input.enabled);
+  if (!authorizationResult.ok) {
+    return authorizationResult;
+  }
+  const authorization = authorizationResult.value;
   // enabling under denial keeps the reminder disabled with the denied
   // state; the ui explains the settings path instead of re-prompting
   const enabled = input.enabled && authorization === 'granted';
@@ -354,9 +414,20 @@ export async function reconcileReminderSchedules(
   deps: ReminderCommandDeps,
   input: { commandId: CommandId },
 ): Promise<DomainResult<{ updated: number }>> {
-  const authorization = await deps.scheduler.authorization();
+  const replay = await replayCommand<{ updated: number }>(deps.db, input.commandId);
+  if (replay !== null) {
+    return replay;
+  }
+  const authorizationResult = await resolveReminderAuthorization(deps.scheduler, true, false);
+  if (!authorizationResult.ok) {
+    return authorizationResult;
+  }
+  const authorization = authorizationResult.value;
   return runCommand(deps, input.commandId, async ({ tx }) => {
     let updated = 0;
+    const pendingRequests = new Map(
+      (await deps.scheduler.pendingRequests()).map(({ identifier, request }) => [identifier, request]),
+    );
 
     const orphans = await listOrphanedScheduleRows(tx);
     if (orphans.length > 0) {
@@ -376,7 +447,18 @@ export async function reconcileReminderSchedules(
       const desiredWeekdays = weekdaysInMask(entry.reminder.weekdaysMask);
       const rowsMatch =
         rows.length === desiredWeekdays.length &&
-        rows.every((row, index) => row.weekday === desiredWeekdays[index]);
+        rows.every((row, index) => {
+          const pending = pendingRequests.get(row.nativeIdentifier);
+          return row.weekday === desiredWeekdays[index] && pending != null &&
+            matchesReminderRequest(pending, {
+              reminderId: entry.reminder.id,
+              boardId: entry.reminder.boardId,
+              weekday: row.weekday,
+              minuteOfDay: entry.reminder.minuteOfDay,
+              title: entry.boardTitle,
+              body: entry.reminder.message ?? `Check in to ${entry.boardTitle}`,
+            });
+        });
       // a reminder that wants a schedule but cannot have one must read
       // denied, not a leftover idle or error state. a first-save denial
       // (record disabled, state denied) also stays denied while the
@@ -407,7 +489,8 @@ export async function reconcileReminderSchedules(
       // update: reporting it would loop invalidation-driven reconciles
       const changed =
         outcome.scheduleState !== entry.reminder.scheduleState ||
-        outcome.lastScheduleError !== entry.reminder.lastScheduleError;
+        outcome.lastScheduleError !== entry.reminder.lastScheduleError ||
+        (outcome.scheduleState === 'scheduled' && !rowsMatch);
       if (changed) {
         // the reminder's own mutation stamp is preserved: reconciliation
         // is device-local schedule state, not a synced edit
@@ -426,4 +509,13 @@ export async function reconcileReminderSchedules(
     }
     return ok({ updated });
   });
+}
+
+function matchesReminderRequest(actual: ReminderScheduleRequest, expected: ReminderScheduleRequest): boolean {
+  return actual.reminderId === expected.reminderId &&
+    actual.boardId === expected.boardId &&
+    actual.weekday === expected.weekday &&
+    actual.minuteOfDay === expected.minuteOfDay &&
+    actual.title === expected.title &&
+    actual.body === expected.body;
 }

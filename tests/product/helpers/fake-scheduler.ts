@@ -35,6 +35,10 @@ export class FakeReminderScheduler implements ReminderScheduler {
     return [...this.pending.keys()];
   }
 
+  async pendingRequests() {
+    return [...this.pending].map(([identifier, request]) => ({ identifier, request }));
+  }
+
   async schedule(request: ReminderScheduleRequest): Promise<string> {
     if (this.failNextSchedules > 0) {
       this.failNextSchedules -= 1;

@@ -12,6 +12,7 @@ import { AppText } from '@/components/foundation/app-text';
 import type { Board, Reminder } from '@/core/domain/entities';
 import type { BoardId, ReminderId } from '@/core/domain/ids';
 import type { DomainError } from '@/core/domain/result';
+import { validateReminderMessage } from '@/core/domain/validation';
 import { getBoard, getReminder } from '@/core/domain/queries';
 import {
   createReminder,
@@ -226,15 +227,19 @@ function ReminderFormBody({
       setError({ code: 'validation', message: 'Pick at least one weekday.', retryable: false });
       return;
     }
+    const validatedMessage = validateReminderMessage(message);
+    if (!validatedMessage.ok) {
+      setError(validatedMessage.error);
+      return;
+    }
     setError(null);
     // an unsaved board keeps its reminders in the draft; they commit
     // together with the board only after both validate
     if (board === null) {
-      const trimmed = message.trim();
       const entry: DraftReminder = {
         weekdaysMask,
         minuteOfDay,
-        message: trimmed,
+        message: validatedMessage.value ?? '',
         enabled: draftReminder?.enabled ?? true,
       };
       const reminders = [...getDraftState().draft.reminders];

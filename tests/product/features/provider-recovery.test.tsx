@@ -1,7 +1,10 @@
+import { act } from '@testing-library/react-native';
 import { Text } from 'react-native';
 
 import { err } from '@/core/domain/result';
 import type { ProductCore } from '@/platform/database/product-core';
+import * as reminderCommands from '@/core/domain/reminder-commands';
+import * as timeChange from '@/platform/time-change';
 
 import * as coreModule from '../../../src/testing/product-core.mock';
 import { fireEvent, renderRouter, screen, settle, renderComponent } from '../../../src/testing/render';
@@ -15,6 +18,33 @@ describe('product provider recovery', () => {
   beforeEach(() => {
     coreModule.resetProductCoreForTests();
     jest.restoreAllMocks();
+  });
+
+  it('reconciles once with the new timezone when the native clock changes while active', async () => {
+    jest.useFakeTimers();
+    let onTimeChange: () => void = () => {};
+    const remove = jest.fn();
+    jest.spyOn(timeChange, 'addSignificantTimeChangeListener').mockImplementation((listener) => {
+      onTimeChange = listener;
+      return remove;
+    });
+    const reconcile = jest.spyOn(reminderCommands, 'reconcileReminderSchedules');
+    const opened = await coreModule.getProductCore();
+    if (!opened.ok) throw new Error('core failed');
+    const { unmount } = renderComponent(
+      <ProductProvider coreOverride={opened.value as ProductCore}>
+        <Text>ready</Text>
+      </ProductProvider>,
+    );
+    await settle();
+    reconcile.mockClear();
+    coreModule.mockClock.zone = 'Europe/Paris';
+    await act(async () => { onTimeChange(); });
+    await settle();
+    expect(reconcile).toHaveBeenCalledTimes(1);
+    expect(reconcile.mock.calls[0][0].clock.timeZoneId()).toBe('Europe/Paris');
+    unmount();
+    expect(remove).toHaveBeenCalledTimes(1);
   });
 
   it('shows the recovery surface on a failed open and retries into the app', async () => {

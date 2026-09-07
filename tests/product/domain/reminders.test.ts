@@ -19,6 +19,16 @@ import { FakeReminderScheduler } from '../helpers/fake-scheduler';
 import { createBoardForTest } from '../helpers/product-fixtures';
 import { createTestHarness, type TestHarness } from '../helpers/test-db';
 
+jest.mock('expo-notifications', () => ({
+  setNotificationHandler: jest.fn(),
+  getPermissionsAsync: jest.fn(),
+  requestPermissionsAsync: jest.fn(),
+  getAllScheduledNotificationsAsync: jest.fn(),
+  scheduleNotificationAsync: jest.fn(),
+  cancelScheduledNotificationAsync: jest.fn(),
+  SchedulableTriggerInputTypes: { WEEKLY: 'weekly' },
+}));
+
 const MONDAY_WEDNESDAY = 0b0000101;
 const MONDAY = 0b0000001;
 
@@ -544,6 +554,76 @@ describe('reminder commands', () => {
 });
 
 describe('reminder reconciliation', () => {
+  it.each([
+    { reminderId: 'wrong' }, { boardId: 'wrong' }, { weekday: 7 },
+    { minuteOfDay: 800 }, { title: 'stale title' }, { body: 'stale body' },
+  ])('replaces native request metadata drift %o', async (drift) => {
+    const { harness, scheduler, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    await createReminder(deps, {
+      commandId: harness.ids.nextCommandId(), boardId,
+      weekdaysMask: MONDAY, minuteOfDay: 480, enabled: true,
+    });
+    const request = scheduler.pending.get('native-1')!;
+    scheduler.pending.set('native-1', { ...request, ...drift });
+    expect(await reconcileReminderSchedules(deps, { commandId: harness.ids.nextCommandId() }))
+      .toEqual({ ok: true, value: { updated: 1 } });
+    expect([...scheduler.pending.values()]).toEqual([request]);
+    await harness.db.closeAsync();
+  });
+
+  it('preserves a denied first save until authorization changes', async () => {
+    const { harness, scheduler, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    scheduler.auth = 'denied';
+    await createReminder(deps, {
+      commandId: harness.ids.nextCommandId(), boardId,
+      weekdaysMask: MONDAY, minuteOfDay: 480, enabled: true,
+    });
+    expect(await reconcileReminderSchedules(deps, { commandId: harness.ids.nextCommandId() }))
+      .toEqual({ ok: true, value: { updated: 0 } });
+    scheduler.auth = 'granted';
+    expect(await reconcileReminderSchedules(deps, { commandId: harness.ids.nextCommandId() }))
+      .toEqual({ ok: true, value: { updated: 1 } });
+    expect(scheduler.pending.size).toBe(0);
+    await harness.db.closeAsync();
+  });
+
+  it('recreates requests removed by the operating system despite settled local rows', async () => {
+    const { harness, scheduler, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    await createReminder(deps, {
+      commandId: harness.ids.nextCommandId(), boardId,
+      weekdaysMask: MONDAY_WEDNESDAY, minuteOfDay: 480, enabled: true,
+    });
+    scheduler.pending.delete('native-1');
+    const result = await reconcileReminderSchedules(deps, { commandId: harness.ids.nextCommandId() });
+    expect(result.ok && result.value.updated).toBe(1);
+    expect([...scheduler.pending.values()].map((request) => request.weekday)).toEqual([1, 3]);
+    expect(await reconcileReminderSchedules(deps, { commandId: harness.ids.nextCommandId() }))
+      .toEqual({ ok: true, value: { updated: 0 } });
+    await harness.db.closeAsync();
+  });
+
+  it('refreshes native time and content after a synced reminder and board edit', async () => {
+    const { harness, scheduler, deps } = await setup();
+    const boardId = await createBoardForTest(harness, { title: 'old title' });
+    const created = await createReminder(deps, {
+      commandId: harness.ids.nextCommandId(), boardId,
+      weekdaysMask: MONDAY, minuteOfDay: 480, enabled: true,
+    });
+    const reminderId = firstReminderId(created);
+    await harness.db.runAsync('UPDATE boards SET title = ? WHERE id = ?', ['new title', boardId]);
+    await harness.db.runAsync('UPDATE reminders SET minute_of_day = ?, message = ? WHERE id = ?',
+      [600, 'new message', reminderId]);
+    const result = await reconcileReminderSchedules(deps, { commandId: harness.ids.nextCommandId() });
+    expect(result.ok && result.value.updated).toBe(1);
+    expect([...scheduler.pending.values()]).toEqual([{
+      boardId, reminderId, weekday: 1, minuteOfDay: 600, title: 'new title', body: 'new message',
+    }]);
+    await harness.db.closeAsync();
+  });
+
   it('suspends schedules on archive and restores them on restore', async () => {
     const { harness, scheduler, deps } = await setup();
     const boardId = await createBoardForTest(harness);
@@ -804,6 +884,111 @@ describe('reminder defensive edges', () => {
 });
 
 describe('sol reminder remediation', () => {
+  it('replays completed saves and reconciliation while native permission APIs are unavailable', async () => {
+    const { harness, scheduler, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    const createInput = {
+      commandId: harness.ids.nextCommandId(), boardId,
+      weekdaysMask: MONDAY, minuteOfDay: 480, enabled: true,
+    };
+    const created = await createReminder(deps, createInput);
+    const reminderId = firstReminderId(created);
+    const record = await getReminder(harness.deps, reminderId);
+    if (!record.ok || !record.value) throw new Error('missing reminder');
+    const updateInput = {
+      commandId: harness.ids.nextCommandId(), reminderId,
+      expectedMutationStamp: record.value.mutationStamp, weekdaysMask: MONDAY, minuteOfDay: 600,
+    };
+    const updated = await updateReminder(deps, updateInput);
+    const toggleInput = { commandId: harness.ids.nextCommandId(), reminderId, enabled: true };
+    const toggled = await setReminderEnabled(deps, toggleInput);
+    const reconcileInput = { commandId: harness.ids.nextCommandId() };
+    const reconciled = await reconcileReminderSchedules(deps, reconcileInput);
+    const before = new Map(scheduler.pending);
+    const authorization = jest.spyOn(scheduler, 'authorization').mockRejectedValue(new Error('unavailable'));
+    expect(await createReminder(deps, createInput)).toEqual(created);
+    expect(await updateReminder(deps, updateInput)).toEqual(updated);
+    expect(await setReminderEnabled(deps, toggleInput)).toEqual(toggled);
+    expect(await reconcileReminderSchedules(deps, reconcileInput)).toEqual(reconciled);
+    expect(authorization).not.toHaveBeenCalled();
+    expect(scheduler.pending).toEqual(before);
+    await harness.db.closeAsync();
+  });
+
+  it('returns retryable results for permission failures in edit, enable, and reconcile', async () => {
+    const { harness, scheduler, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    const created = await createReminder(deps, {
+      commandId: harness.ids.nextCommandId(), boardId,
+      weekdaysMask: MONDAY, minuteOfDay: 480, enabled: false,
+    });
+    const reminderId = firstReminderId(created);
+    const before = await getReminder(harness.deps, reminderId);
+    if (!before.ok || !before.value) throw new Error('missing reminder');
+    jest.spyOn(scheduler, 'authorization').mockRejectedValue(new Error('native private details'));
+    const results = await Promise.all([
+      updateReminder(deps, {
+        commandId: harness.ids.nextCommandId(), reminderId,
+        expectedMutationStamp: before.value.mutationStamp, weekdaysMask: MONDAY, minuteOfDay: 600,
+      }),
+      setReminderEnabled(deps, { commandId: harness.ids.nextCommandId(), reminderId, enabled: true }),
+      reconcileReminderSchedules(deps, { commandId: harness.ids.nextCommandId() }),
+    ]);
+    for (const result of results) {
+      expect(result).toEqual({ ok: false, error: expect.objectContaining({ code: 'platform', retryable: true }) });
+      expect(JSON.stringify(result)).not.toContain('native private details');
+    }
+    expect(await getReminder(harness.deps, reminderId)).toEqual(before);
+    await harness.db.closeAsync();
+  });
+
+  it('does not persist or consume the command when the system permission prompt rejects', async () => {
+    const { harness, scheduler, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    scheduler.auth = 'undetermined';
+    jest.spyOn(scheduler, 'requestAuthorization').mockRejectedValueOnce(new Error('native private details'));
+    const input = {
+      commandId: harness.ids.nextCommandId(), boardId,
+      weekdaysMask: MONDAY, minuteOfDay: 480, enabled: true,
+    };
+    expect(await createReminder(deps, input)).toEqual({
+      ok: false, error: expect.objectContaining({ code: 'platform', retryable: true }),
+    });
+    expect(await listBoardReminders(harness.deps, boardId)).toEqual({ ok: true, value: [] });
+    expect((await createReminder(deps, input)).ok).toBe(true);
+    expect(scheduler.pending.size).toBe(1);
+    await harness.db.closeAsync();
+  });
+
+  it('returns an actionable result when a permission query rejects before saving', async () => {
+    const { harness, scheduler, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    jest.spyOn(scheduler, 'authorization').mockRejectedValue(new Error('native private details'));
+    await expect(createReminder(deps, {
+      commandId: harness.ids.nextCommandId(), boardId,
+      weekdaysMask: MONDAY, minuteOfDay: 480, enabled: true,
+    })).resolves.toEqual({ ok: false, error: expect.objectContaining({ code: 'platform', retryable: true }) });
+    expect(await listBoardReminders(harness.deps, boardId)).toEqual({ ok: true, value: [] });
+    await harness.db.closeAsync();
+  });
+
+  it('disables a reminder even when permission queries are unavailable', async () => {
+    const { harness, scheduler, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    const created = await createReminder(deps, {
+      commandId: harness.ids.nextCommandId(), boardId,
+      weekdaysMask: MONDAY, minuteOfDay: 480, enabled: true,
+    });
+    const authorization = jest.spyOn(scheduler, 'authorization')
+      .mockRejectedValue(new Error('native private details'));
+    await expect(setReminderEnabled(deps, {
+      commandId: harness.ids.nextCommandId(), reminderId: firstReminderId(created), enabled: false,
+    })).resolves.toEqual({ ok: true, value: { scheduleState: 'idle', enabled: false } });
+    expect(authorization).not.toHaveBeenCalled();
+    expect(scheduler.pending.size).toBe(0);
+    await harness.db.closeAsync();
+  });
+
   it('checks the target before consuming the just-in-time prompt', async () => {
     const { harness, scheduler, deps } = await setup();
     const boardId = await createBoardForTest(harness);
@@ -1085,5 +1270,165 @@ describe('preflight race re-checks', () => {
     );
     expect(!boardArchived.ok && boardArchived.error.code).toBe('archived');
     await harness.db.closeAsync();
+  });
+});
+
+describe('native reminder adapter boundary', () => {
+  const notifications = jest.requireMock<{
+    getPermissionsAsync: jest.Mock;
+    requestPermissionsAsync: jest.Mock;
+    getAllScheduledNotificationsAsync: jest.Mock;
+    scheduleNotificationAsync: jest.Mock;
+    cancelScheduledNotificationAsync: jest.Mock;
+  }>('expo-notifications');
+  const { reminderScheduler: adapter } = jest.requireActual<
+    typeof import('@/platform/notifications')
+  >('../../../src/platform/notifications/index');
+
+  it.each([
+    ['pendingRequests', 'pending_unavailable'],
+    ['pendingIdentifiers', 'pending_unavailable'],
+    ['remainingCapacity', 'capacity_unavailable'],
+  ] as const)('sanitizes %s native rejection', async (operation, code) => {
+    notifications.getAllScheduledNotificationsAsync.mockRejectedValue(new Error('private native details'));
+    await expect(adapter[operation]()).rejects.toMatchObject({ name: 'ReminderSchedulerError', code });
+    await expect(adapter[operation]()).rejects.not.toThrow('private native details');
+  });
+
+  it('sanitizes schedule and cancel native rejection', async () => {
+    notifications.scheduleNotificationAsync.mockRejectedValue(new Error('private native details'));
+    notifications.cancelScheduledNotificationAsync.mockRejectedValue(new Error('private native details'));
+    await expect(adapter.schedule({
+      reminderId: 'reminder', boardId: 'board', weekday: 1, minuteOfDay: 480, title: 'read', body: 'read',
+    })).rejects.toMatchObject({ name: 'ReminderSchedulerError', code: 'schedule_failed' });
+    await expect(adapter.cancel(['native-1'])).rejects.toMatchObject({
+      name: 'ReminderSchedulerError', code: 'cancel_failed',
+    });
+  });
+
+  it.each(['pendingRequests', 'pendingIdentifiers'] as const)(
+    'reports %s native rejection as a retryable platform result', async (operation) => {
+      const { harness, deps } = await setup();
+      notifications.getPermissionsAsync.mockResolvedValue({ granted: true });
+      notifications.getAllScheduledNotificationsAsync.mockRejectedValue(new Error('private native details'));
+      if (operation === 'pendingIdentifiers') {
+        notifications.getAllScheduledNotificationsAsync.mockResolvedValueOnce([]);
+      }
+      const result = await reconcileReminderSchedules({ ...deps, scheduler: adapter }, {
+        commandId: harness.ids.nextCommandId(),
+      });
+      expect(result).toEqual({ ok: false, error: expect.objectContaining({ code: 'platform', retryable: true }) });
+      expect(JSON.stringify(result)).not.toContain('private native details');
+      await harness.db.closeAsync();
+    },
+  );
+
+  it('rolls back the reminder when native capacity cannot be read', async () => {
+    const { harness, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    notifications.getPermissionsAsync.mockResolvedValue({ granted: true });
+    notifications.getAllScheduledNotificationsAsync.mockRejectedValue(new Error('private native details'));
+    const result = await createReminder({ ...deps, scheduler: adapter }, {
+      commandId: harness.ids.nextCommandId(), boardId, weekdaysMask: MONDAY, minuteOfDay: 480, enabled: true,
+    });
+    expect(result).toEqual({ ok: false, error: expect.objectContaining({ code: 'platform', retryable: true }) });
+    expect(JSON.stringify(result)).not.toContain('private native details');
+    expect(await listBoardReminders(harness.deps, boardId)).toEqual({ ok: true, value: [] });
+    await harness.db.closeAsync();
+  });
+
+  it('preserves the failed schedule state when native scheduling rejects', async () => {
+    const { harness, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    notifications.getPermissionsAsync.mockResolvedValue({ granted: true });
+    notifications.getAllScheduledNotificationsAsync.mockResolvedValue([]);
+    notifications.scheduleNotificationAsync.mockRejectedValue(new Error('private native details'));
+    const result = await createReminder({ ...deps, scheduler: adapter }, {
+      commandId: harness.ids.nextCommandId(), boardId, weekdaysMask: MONDAY, minuteOfDay: 480, enabled: true,
+    });
+    expect(result.ok && result.value.scheduleState).toBe('error');
+    const record = await getReminder(harness.deps, firstReminderId(result));
+    expect(record.ok && record.value?.lastScheduleError).toBe('schedule_failed');
+    expect(JSON.stringify(record)).not.toContain('private native details');
+    await harness.db.closeAsync();
+  });
+
+  it('preserves the reminder when native cancellation rejects', async () => {
+    const { harness, deps } = await setup();
+    const boardId = await createBoardForTest(harness);
+    const created = await createReminder(deps, {
+      commandId: harness.ids.nextCommandId(), boardId, weekdaysMask: MONDAY, minuteOfDay: 480, enabled: true,
+    });
+    const reminderId = firstReminderId(created);
+    const before = await getReminder(harness.deps, reminderId);
+    notifications.cancelScheduledNotificationAsync.mockRejectedValue(new Error('private native details'));
+    const result = await deleteReminder({ ...deps, scheduler: adapter }, {
+      commandId: harness.ids.nextCommandId(), reminderId,
+    });
+    expect(result).toEqual({ ok: false, error: expect.objectContaining({ code: 'platform', retryable: true }) });
+    expect(JSON.stringify(result)).not.toContain('private native details');
+    expect(await getReminder(harness.deps, reminderId)).toEqual(before);
+    await harness.db.closeAsync();
+  });
+
+  it.each(['authorization', 'requestAuthorization'] as const)(
+    'maps %s rejection to a typed error without native details', async (operation) => {
+      notifications.getPermissionsAsync.mockRejectedValue(new Error('private native details'));
+      notifications.requestPermissionsAsync.mockRejectedValue(new Error('private native details'));
+      await expect(adapter[operation]()).rejects.toMatchObject({
+        name: 'ReminderSchedulerError',
+        code: 'authorization_unavailable',
+        message: 'Notification permission is temporarily unavailable.',
+      });
+    },
+  );
+
+  it('reads ios serialized weekly calendar requests and android weekly requests', async () => {
+    const content = {
+      title: 'stretch', body: 'take a break', data: { reminderId: 'reminder', boardId: 'board' },
+    };
+    notifications.getAllScheduledNotificationsAsync.mockResolvedValue([
+      {
+        identifier: 'ios', content,
+        trigger: {
+          type: 'calendar', repeats: true,
+          dateComponents: {
+            weekday: 2, hour: 8, minute: 30, calendar: null, timeZone: null,
+            isLeapMonth: false, isRepeatedDay: false,
+          },
+        },
+      },
+      { identifier: 'android', content, trigger: { type: 'weekly', weekday: 1, hour: 10, minute: 0 } },
+    ]);
+    expect(await adapter.pendingRequests()).toEqual([
+      {
+        identifier: 'ios',
+        request: { reminderId: 'reminder', boardId: 'board', weekday: 1, minuteOfDay: 510,
+          title: 'stretch', body: 'take a break' },
+      },
+      {
+        identifier: 'android',
+        request: { reminderId: 'reminder', boardId: 'board', weekday: 7, minuteOfDay: 600,
+          title: 'stretch', body: 'take a break' },
+      },
+    ]);
+  });
+
+  it('keeps malformed or nonweekly native identifiers visible for replacement and orphan cleanup', async () => {
+    const content = { title: 'stretch', body: 'move', data: { reminderId: 'reminder', boardId: 'board' } };
+    const calendar = { type: 'calendar', repeats: true, dateComponents: { weekday: 2, hour: 8, minute: 0 } };
+    notifications.getAllScheduledNotificationsAsync.mockResolvedValue([
+      { identifier: 'immediate', content, trigger: null },
+      { identifier: 'daily', content, trigger: { type: 'daily', hour: 8, minute: 0 } },
+      { identifier: 'once', content, trigger: { ...calendar, repeats: false } },
+      { identifier: 'dated', content, trigger: { ...calendar, dateComponents: { ...calendar.dateComponents, year: 2026 } } },
+      { identifier: 'pinned', content, trigger: { ...calendar, dateComponents: { ...calendar.dateComponents, timeZone: 'UTC' } } },
+      { identifier: 'invalid-hour', content, trigger: { type: 'weekly', weekday: 1, hour: 24, minute: 0 } },
+      { identifier: 'missing-link', content: { ...content, data: {} }, trigger: calendar },
+    ]);
+    expect(await adapter.pendingRequests()).toEqual(
+      ['immediate', 'daily', 'once', 'dated', 'pinned', 'invalid-hour', 'missing-link']
+        .map((identifier) => ({ identifier, request: null })),
+    );
   });
 });

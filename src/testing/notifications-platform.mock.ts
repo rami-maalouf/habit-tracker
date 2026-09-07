@@ -51,6 +51,9 @@ export const reminderScheduler: ReminderScheduler = {
   async pendingIdentifiers() {
     return [...notificationsPlatformMock.pending.keys()];
   },
+  async pendingRequests() {
+    return [...notificationsPlatformMock.pending].map(([identifier, request]) => ({ identifier, request }));
+  },
   async schedule(request: ReminderScheduleRequest) {
     if (notificationsPlatformMock.failNextSchedules > 0) {
       notificationsPlatformMock.failNextSchedules -= 1;

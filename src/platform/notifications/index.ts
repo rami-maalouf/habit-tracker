@@ -1,10 +1,41 @@
 import * as Notifications from 'expo-notifications';
 
 import type {
+  PendingReminderRequest,
   ReminderAuthorization,
+  ReminderSchedulerFailure,
+  ReminderSchedulerFailureCode,
   ReminderScheduler,
   ReminderScheduleRequest,
 } from '@/core/domain/ports';
+
+const SCHEDULER_ERROR_MESSAGES: Record<ReminderSchedulerFailureCode, string> = {
+  authorization_unavailable: 'Notification permission is temporarily unavailable.',
+  pending_unavailable: 'Scheduled notifications could not be checked. Try again.',
+  capacity_unavailable: 'Notification capacity could not be checked. Try again.',
+  schedule_failed: 'The notification could not be scheduled. Try again.',
+  cancel_failed: 'The notification could not be cancelled. Try again.',
+};
+
+export class ReminderSchedulerError extends Error implements ReminderSchedulerFailure {
+  readonly name = 'ReminderSchedulerError' as const;
+
+  constructor(readonly code: ReminderSchedulerFailureCode) {
+    super(SCHEDULER_ERROR_MESSAGES[code]);
+  }
+}
+
+async function schedulerOperation<Value>(
+  code: ReminderSchedulerFailureCode,
+  operation: () => Promise<Value>,
+): Promise<Value> {
+  try {
+    return await operation();
+  } catch {
+    // never carry native error details across the platform boundary
+    throw new ReminderSchedulerError(code);
+  }
+}
 
 // ios caps the pending local-notification pool at 64 requests
 const IOS_PENDING_LIMIT = 64;
@@ -33,31 +64,89 @@ function toExpoWeekday(isoWeekday: number): number {
   return (isoWeekday % 7) + 1;
 }
 
+// ios serializes weekly requests as calendar triggers; android uses
+// weekly triggers. read the native trigger, not data copied at save time.
+function pendingReminderRequest(pending: Notifications.NotificationRequest): PendingReminderRequest {
+  const { trigger, content, identifier } = pending;
+  const unsupported = { identifier, request: null };
+  if (!trigger) {
+    return unsupported;
+  }
+  const nativeTrigger = trigger as unknown as Record<string, unknown>;
+  const calendar = nativeTrigger.type === 'calendar' && nativeTrigger.repeats === true;
+  const components = calendar ? nativeTrigger.dateComponents
+    : nativeTrigger.type === 'weekly' ? nativeTrigger : null;
+  if (!components || typeof components !== 'object' || Array.isArray(components)) {
+    return unsupported;
+  }
+  // extra calendar constraints could turn a weekly request into a dated
+  // or timezone-pinned schedule; the desired reminder follows local time.
+  if (calendar && Object.entries(components).some(([key, value]) =>
+    !['weekday', 'hour', 'minute'].includes(key) && value != null && value !== false,
+  )) {
+    return unsupported;
+  }
+  const { weekday, hour, minute } = components as Record<string, unknown>;
+  const data = content.data;
+  if (typeof weekday !== 'number' || !Number.isInteger(weekday) || weekday < 1 || weekday > 7 ||
+    typeof hour !== 'number' || !Number.isInteger(hour) || hour < 0 || hour > 23 ||
+    typeof minute !== 'number' || !Number.isInteger(minute) || minute < 0 || minute > 59 ||
+    typeof data?.boardId !== 'string' || typeof data.reminderId !== 'string' ||
+    typeof content.title !== 'string' || typeof content.body !== 'string') {
+    return unsupported;
+  }
+  return {
+    identifier,
+    request: {
+      reminderId: data.reminderId,
+      boardId: data.boardId,
+      weekday: ((weekday + 5) % 7) + 1,
+      minuteOfDay: hour * 60 + minute,
+      title: content.title,
+      body: content.body,
+    },
+  };
+}
+
 export const reminderScheduler: ReminderScheduler = {
   async authorization(): Promise<ReminderAuthorization> {
-    return toAuthorization(await Notifications.getPermissionsAsync());
+    return schedulerOperation('authorization_unavailable', async () =>
+      toAuthorization(await Notifications.getPermissionsAsync()),
+    );
   },
 
   async requestAuthorization(): Promise<ReminderAuthorization> {
-    return toAuthorization(
-      await Notifications.requestPermissionsAsync({
-        ios: { allowAlert: true, allowSound: true, allowBadge: true },
-      }),
+    return schedulerOperation('authorization_unavailable', async () =>
+      toAuthorization(
+        await Notifications.requestPermissionsAsync({
+          ios: { allowAlert: true, allowSound: true, allowBadge: true },
+        }),
+      ),
     );
   },
 
   async remainingCapacity(): Promise<number> {
-    const pending = await Notifications.getAllScheduledNotificationsAsync();
-    return IOS_PENDING_LIMIT - pending.length;
+    return schedulerOperation('capacity_unavailable', async () => {
+      const pending = await Notifications.getAllScheduledNotificationsAsync();
+      return IOS_PENDING_LIMIT - pending.length;
+    });
   },
 
   async pendingIdentifiers(): Promise<string[]> {
-    const pending = await Notifications.getAllScheduledNotificationsAsync();
-    return pending.map((request) => request.identifier);
+    return schedulerOperation('pending_unavailable', async () => {
+      const pending = await Notifications.getAllScheduledNotificationsAsync();
+      return pending.map((request) => request.identifier);
+    });
+  },
+
+  async pendingRequests(): Promise<PendingReminderRequest[]> {
+    return schedulerOperation('pending_unavailable', async () =>
+      (await Notifications.getAllScheduledNotificationsAsync()).map(pendingReminderRequest),
+    );
   },
 
   async schedule(request: ReminderScheduleRequest): Promise<string> {
-    return Notifications.scheduleNotificationAsync({
+    return schedulerOperation('schedule_failed', () => Notifications.scheduleNotificationAsync({
       content: {
         title: request.title,
         body: request.body,
@@ -71,15 +160,15 @@ export const reminderScheduler: ReminderScheduler = {
         hour: Math.floor(request.minuteOfDay / 60),
         minute: request.minuteOfDay % 60,
       },
-    });
+    }));
   },
 
   async cancel(identifiers: string[]): Promise<void> {
-    await Promise.all(
+    await schedulerOperation('cancel_failed', () => Promise.all(
       identifiers.map((identifier) =>
         Notifications.cancelScheduledNotificationAsync(identifier),
       ),
-    );
+    ));
   },
 };
 

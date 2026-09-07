@@ -65,13 +65,37 @@ export type CommandDeps = {
   ids: IdGenerator;
 };
 
-type CommandContext = {
+export type CommandContext = {
   tx: SqlExecutor;
   now: number;
   timeZoneId: string;
   settings: NonNullable<Awaited<ReturnType<typeof getSettings>>>;
   stamp(): string;
 };
+
+// preflight users can replay before calling platform services; commands
+// recheck inside their transaction so concurrent retries stay idempotent.
+export async function replayCommand<Value>(
+  db: SqlExecutor,
+  commandId: CommandId,
+): Promise<DomainResult<Value> | null> {
+  if (!isUuidV4(commandId)) {
+    return err('validation', 'Command ids must be uuids.', { field: 'commandId' });
+  }
+  try {
+    const receipt = await getReceipt(db, commandId);
+    if (receipt === null) return null;
+    const replayed = JSON.parse(receipt) as { ok: boolean; value?: Value };
+    if (replayed.ok && !('value' in replayed)) {
+      replayed.value = undefined;
+    }
+    return replayed as DomainResult<Value>;
+  } catch (cause) {
+    return err('database', `The command could not be completed: ${describe(cause)}`, {
+      retryable: true,
+    });
+  }
+}
 
 // every command validates before its transaction, replays its receipt when
 // retried, advances the hybrid clock once per mutation stamp, and persists
@@ -89,15 +113,8 @@ export async function runCommand<Value>(
   const timeZoneId = deps.clock.timeZoneId();
   try {
     return await deps.db.withExclusiveTransactionAsync(async (tx) => {
-      const receipt = await getReceipt(tx, commandId);
-      if (receipt !== null) {
-        const replayed = JSON.parse(receipt) as { ok: boolean; value?: Value };
-        if (replayed.ok && !('value' in replayed)) {
-          // json drops undefined values; restore the exact original shape
-          replayed.value = undefined;
-        }
-        return replayed as DomainResult<Value>;
-      }
+      const replayed = await replayCommand<Value>(tx, commandId);
+      if (replayed !== null) return replayed;
       const settings = await getSettings(tx);
       if (!settings) {
         return err('database', 'The database is not initialized.');
@@ -119,6 +136,11 @@ export async function runCommand<Value>(
       return result;
     });
   } catch (cause) {
+    if (cause instanceof Error && cause.name === 'ReminderSchedulerError') {
+      return err('platform', 'Notifications could not be updated. Try again.', {
+        retryable: true,
+      });
+    }
     return err('database', `The command could not be completed: ${describe(cause)}`, {
       retryable: true,
     });
@@ -154,7 +176,7 @@ type BoardFieldValidation = {
   startOfDayMinute: number;
 };
 
-function validateBoardFields(
+export function validateBoardFields(
   input: {
     title: string;
     symbol: string;
@@ -215,37 +237,48 @@ export function createBoard(
   if (!fields.ok) {
     return Promise.resolve(fields);
   }
-  return runCommand(deps, input.commandId, async ({ tx, now, timeZoneId, stamp }) => {
-    const boardId = deps.ids.uuid() as BoardId;
-    const mutationStamp = stamp();
-    const orderKey = orderKeyAfter(await lastActiveOrderKey(tx));
-    const board: Board = {
-      id: boardId,
-      title: fields.value.title,
-      symbol: fields.value.symbol,
-      accentHex: fields.value.accentHex,
-      usesTintedBackground: input.usesTintedBackground,
-      tracksAmount: input.tracksAmount,
-      amountUnit: fields.value.amountUnit,
-      quickAmount: fields.value.quickAmount,
-      tracksTime: input.tracksTime,
-      startOfDayMinute: fields.value.startOfDayMinute,
-      metricsEnabled: input.metricsEnabled,
-      orderKey,
-      archivedAt: null,
-      createdAt: now,
-      updatedAt: now,
-      mutationStamp,
-      deletedAt: null,
-    };
-    await insertBoard(tx, board);
-    const today = currentLogicalDate(now, timeZoneId, board.startOfDayMinute);
-    const periodId = await insertPeriod(tx, boardId, today, mutationStamp);
-    await appendOutbox(tx, 'board', boardId, mutationStamp, now);
-    await appendOutbox(tx, 'activity_period', String(periodId), mutationStamp, now);
-    await rebuildWidgetRows(tx, now, timeZoneId);
-    return ok({ boardId });
+  return runCommand(deps, input.commandId, async (context) => {
+    const board = await createBoardInTransaction(deps, context, input, fields.value);
+    return ok({ boardId: board.id });
   });
+}
+
+// callers validate first; the shared envelope owns the receipt and transaction.
+export async function createBoardInTransaction(
+  deps: CommandDeps,
+  { tx, now, timeZoneId, stamp }: CommandContext,
+  input: CreateBoardInput,
+  fields: BoardFieldValidation,
+): Promise<Board> {
+  const boardId = deps.ids.uuid() as BoardId;
+  const mutationStamp = stamp();
+  const orderKey = orderKeyAfter(await lastActiveOrderKey(tx));
+  const board: Board = {
+    id: boardId,
+    title: fields.title,
+    symbol: fields.symbol,
+    accentHex: fields.accentHex,
+    usesTintedBackground: input.usesTintedBackground,
+    tracksAmount: input.tracksAmount,
+    amountUnit: fields.amountUnit,
+    quickAmount: fields.quickAmount,
+    tracksTime: input.tracksTime,
+    startOfDayMinute: fields.startOfDayMinute,
+    metricsEnabled: input.metricsEnabled,
+    orderKey,
+    archivedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    mutationStamp,
+    deletedAt: null,
+  };
+  await insertBoard(tx, board);
+  const today = currentLogicalDate(now, timeZoneId, board.startOfDayMinute);
+  const periodId = await insertPeriod(tx, boardId, today, mutationStamp);
+  await appendOutbox(tx, 'board', boardId, mutationStamp, now);
+  await appendOutbox(tx, 'activity_period', String(periodId), mutationStamp, now);
+  await rebuildWidgetRows(tx, now, timeZoneId);
+  return board;
 }
 
 export type UpdateBoardInput = Omit<CreateBoardInput, 'commandId'> & {
@@ -1037,4 +1070,3 @@ export function importSnapshot(
     return ok(summary);
   });
 }
-

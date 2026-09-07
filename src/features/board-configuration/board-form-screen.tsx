@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, ScrollView, Switch, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/foundation/app-text';
-import { archiveBoard, createBoard, deleteBoard, updateBoard } from '@/core/domain/commands';
+import { archiveBoard, deleteBoard, updateBoard } from '@/core/domain/commands';
+import { createBoardWithReminders } from '@/core/domain/create-board-with-reminders';
 import { boardPalette, boardSymbolAllowlist } from '@/core/domain/entities';
 import type { BoardId } from '@/core/domain/ids';
-import { createReminder, setReminderEnabled } from '@/core/domain/reminder-commands';
+import { setReminderEnabled } from '@/core/domain/reminder-commands';
 import type { DomainError } from '@/core/domain/result';
 import { getBoard, getBoardDependentCounts, listBoardReminders } from '@/core/domain/queries';
 import { reminderScheduler } from '@/platform/notifications';
@@ -256,42 +257,16 @@ export function BoardFormScreen({ boardId }: { boardId: BoardId | null }) {
           expectedMutationStamp: draft.expectedMutationStamp ?? '',
           ...fields,
         })
-      : await createBoard(core, { commandId: nextCommandId(), ...fields });
+      : await createBoardWithReminders(
+          { ...core, scheduler: reminderScheduler },
+          { commandId: nextCommandId(), ...fields, reminders: draft.reminders },
+        );
     if (result.ok) {
-      // a new board commits its drafted reminders with it; every draft was
-      // validated by the reminder editor before it entered the session
-      if (!editing && draft.reminders.length > 0) {
-        const createdBoardId = (result.value as { boardId: BoardId }).boardId;
-        let denied = false;
-        const failures: string[] = [];
-        for (const entry of draft.reminders) {
-          const reminderResult = await createReminder(
-            { ...core, scheduler: reminderScheduler },
-            {
-              commandId: nextCommandId(),
-              boardId: createdBoardId,
-              weekdaysMask: entry.weekdaysMask,
-              minuteOfDay: entry.minuteOfDay,
-              message: entry.message.length > 0 ? entry.message : null,
-              enabled: entry.enabled,
-            },
-          );
-          if (!reminderResult.ok) {
-            failures.push(reminderResult.error.message);
-          } else if (reminderResult.value.scheduleState === 'denied') {
-            denied = true;
-          }
-        }
-        // the board saved either way; a lost reminder or a denied schedule
-        // must not disappear silently
-        if (failures.length > 0) {
-          Alert.alert('A reminder could not be saved', failures[0]);
-        } else if (denied) {
-          Alert.alert(
-            'Notifications are off',
-            'The reminder is saved but disabled. Allow notifications in Settings to turn it on.',
-          );
-        }
+      if ('remindersDenied' in result.value && result.value.remindersDenied) {
+        Alert.alert(
+          'Notifications are off',
+          'The reminder is saved but disabled. Allow notifications in Settings to turn it on.',
+        );
       }
       invalidate();
       skipGuardRef.current = true;

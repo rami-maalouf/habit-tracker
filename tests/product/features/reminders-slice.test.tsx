@@ -1,3 +1,4 @@
+import { act } from '@testing-library/react-native';
 import { Alert } from 'react-native';
 
 import type { BoardId } from '@/core/domain/ids';
@@ -245,7 +246,9 @@ describe('reminders vertical slice', () => {
     const boardId = await seedBoard('tapped board');
     renderRouter('src/app', { initialUrl: '/' });
     await screen.findByText('tapped board');
-    notificationsPlatformMock.emitTap(boardId);
+    await act(async () => {
+      notificationsPlatformMock.emitTap(boardId);
+    });
     await settle();
     expect(await screen.findByText('Add Check-in')).toBeOnTheScreen();
   });
@@ -459,6 +462,34 @@ describe('sol reminder remediation - ui and wiring', () => {
     resetProductCoreForTests();
     notificationsPlatformMock.reset();
     alertSpy.mockClear();
+  });
+
+  it('keeps an invalid new-board reminder open without saving a partial draft', async () => {
+    renderRouter('src/app', { initialUrl: '/' });
+    await screen.findByTestId('create-board');
+    await press('create-board');
+    await screen.findByTestId('add-reminder-row');
+    fireEvent.changeText(screen.getByLabelText('Board name'), 'atomic reminder board');
+    await press('add-reminder-row');
+    await screen.findByTestId('reminder-save');
+    fireEvent.changeText(screen.getByTestId('reminder-message'), 'x'.repeat(181));
+    await press('reminder-save');
+    expect(screen.getByTestId('reminder-error')).toHaveTextContent(/180/);
+    expect(screen.getByTestId('reminder-message')).toHaveProp('value', 'x'.repeat(181));
+    const opened = await getProductCore();
+    if (!opened.ok) throw new Error('core failed');
+    expect(await opened.value.db.getAllAsync('SELECT id FROM boards')).toHaveLength(0);
+    fireEvent.changeText(screen.getByTestId('reminder-message'), 'a valid reminder');
+    await press('reminder-save');
+    await screen.findByTestId('draft-reminder-0');
+    await press('board-form-save');
+    await settle();
+    const boards = await opened.value.db.getAllAsync<{ id: BoardId }>('SELECT id FROM boards');
+    expect(boards).toHaveLength(1);
+    const reminders = await listBoardReminders(opened.value, boards[0].id);
+    expect(reminders.ok && reminders.value).toEqual([
+      expect.objectContaining({ message: 'a valid reminder' }),
+    ]);
   });
 
   it('cancels schedules right after an archive, without a foreground event', async () => {
