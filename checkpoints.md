@@ -2,6 +2,52 @@
 
 ## Pre-fork work - 2026-09-07
 
+### Approval update - continuation authorized
+
+- The user instructed: "you already know what’s best. so go ahead and do everything."
+  This approves the recommended direct CloudKit operations with conditional saves,
+  the shared-fixture Swift App Intents executor, and the import/Timeline/release-links
+  specification corrections. Remaining routine implementation choices are delegated.
+- The user explicitly requested the `studio.orbitlabs.*` namespace. Use
+  `studio.orbitlabs.habittracker`, `group.studio.orbitlabs.habittracker`,
+  `iCloud.studio.orbitlabs.habittracker`, and the matching widget extension suffix.
+  Discover the signing team from the local machine as requested. Zone remains `habit-tracker`.
+- Replace the artwork with a more visual, cartoony, glossy plastic style and integrate
+  the selected result. The user delegated the design choices; no further artwork
+  confirmation is required for this direction.
+- Release destinations are explicitly deferred by "6. dw bout it". Keep the existing
+  honest unavailable-link states; do not invent external destinations or legal text.
+- Reference fixture names may use readable minimal demo labels for the four truncated
+  source names. Do not claim their missing text has been recovered. Seeding remains
+  development-only, explicit, and restricted to an empty product database.
+
+- Independent review identified an iCloud account-switch privacy gap. Add a local-only
+  account digest binding in the same SQLite database, checked before native sync work;
+  refuse a different account instead of uploading the existing account's data to it.
+  This preserves the existing private-account boundary and unchanged transport port.
+  Switching back to the originally bound iCloud account is the supported recovery.
+
+### 3.4 - deterministic development fixture
+
+1. Added seven approved demo boards and 75 deterministic August 2026 check-ins.
+   The explicit `/reference-august-2026` development route refuses a nonempty
+   database, including tombstones, and never changes the clock. The release
+   guard runs before database access. Normal app startup does not insert data.
+2. Extracted the existing import mapping into a reusable transaction function.
+   The empty-store check, validation, receipts, stamps, widget projection, and
+   outbox writes now commit together; infrastructure failure rolls everything back.
+3. Author: GPT-5.6 Sol. Independent root review approved validation, repeat-command
+   idempotency, concurrent insert protection, and the release-build guard.
+   Regression tests cover fixture shape, empty-store refusal, rollback, and guards.
+4. Argent executed the seed exactly once against the empty new-namespace app.
+   All seven titles and August 17/30 heatmap cells were verified. The current
+   September strips remain empty because there is no fake clock. Evidence:
+   `.artifacts/pre-fork/native-acceptance/reference-home.png` and `august-heatmap.png`.
+   `.argent/flows/prefork-reference-seed.yaml` is a recorded one-time seed flow,
+   not a repeated regression against an already populated database.
+5. Combined validation after integration: 569 Jest tests in 45 suites, lint,
+   typecheck, and 100 percent coverage across all four core metrics passed.
+
 ### 3.6 - focused contract and sync scripts
 
 1. Both focused scripts reproduced exit 1 with no tests found before the move.

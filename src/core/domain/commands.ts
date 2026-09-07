@@ -804,7 +804,18 @@ export function importSnapshot(
   deps: CommandDeps,
   input: ImportSnapshotInput,
 ): Promise<DomainResult<ImportSummary>> {
-  return runCommand(deps, input.commandId, async ({ tx, now, timeZoneId, stamp }) => {
+  return runCommand(deps, input.commandId, (context) =>
+    importSnapshotInTransaction(deps, context, input.draft),
+  );
+}
+
+// callers that need another invariant in the same exclusive transaction
+// can reuse the import mapping without nesting a command transaction.
+export async function importSnapshotInTransaction(
+  deps: CommandDeps,
+  { tx, now, timeZoneId, stamp }: CommandContext,
+  importDraft: ImportDraft,
+): Promise<DomainResult<ImportSummary>> {
     const summary: ImportSummary = {
       boardsCreated: 0,
       boardsSkipped: 0,
@@ -820,7 +831,7 @@ export function importSnapshot(
     >();
     let lastKey = await lastActiveOrderKey(tx);
 
-    for (const draft of input.draft.boards) {
+    for (const draft of importDraft.boards) {
       // invalid records skip individually instead of failing the import
       const fields = validateBoardFields({
         title: draft.title,
@@ -937,7 +948,7 @@ export function importSnapshot(
       summary.boardsCreated += 1;
     }
 
-    for (const draft of input.draft.checkIns) {
+    for (const draft of importDraft.checkIns) {
       const boardId = boardIdBySource.get(draft.sourceBoardId);
       if (!boardId) {
         summary.checkInsSkipped += 1;
@@ -1021,7 +1032,7 @@ export function importSnapshot(
       summary.checkInsCreated += 1;
     }
 
-    for (const draft of input.draft.reminders) {
+    for (const draft of importDraft.reminders) {
       const boardId = boardIdBySource.get(draft.sourceBoardId);
       if (!boardId) {
         summary.remindersSkipped += 1;
@@ -1068,5 +1079,4 @@ export function importSnapshot(
 
     await rebuildWidgetRows(tx, now, timeZoneId);
     return ok(summary);
-  });
 }

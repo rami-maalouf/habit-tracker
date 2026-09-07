@@ -1,0 +1,43 @@
+steps:
+  - echo: Open the explicitly requested development fixture route. The action only
+      seeds an empty store and never changes the clock.
+  - tool: open-url
+    args:
+      url: studio.orbitlabs.habittracker:///reference-august-2026
+  - await:
+      visible:
+        id: reference-seed-action
+      timeout: 10000
+  - echo: The database is empty. Add the seven reference boards and August activity.
+  - tap:
+      id: reference-seed-action
+  - await:
+      visible:
+        text: plan your day
+      timeout: 5000
+  - await:
+      visible:
+        text: morning pages
+      timeout: 5000
+  - await:
+      visible:
+        text: don’t overeat
+      timeout: 5000
+  - await:
+      visible:
+        text: in bed at assigned time
+      timeout: 5000
+  - await:
+      visible:
+        text: dnd until 1 focus session
+      timeout: 5000
+  - await:
+      visible:
+        text: intentional content
+      timeout: 5000
+  - await:
+      visible:
+        text: don’t touch stash, ever
+      timeout: 5000
+executionPrerequisite: The new Ripples development app is running with an empty
+  product database. Explicit developer fixture seeding is authorized.

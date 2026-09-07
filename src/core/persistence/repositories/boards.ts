@@ -74,6 +74,13 @@ export async function insertBoard(tx: SqlExecutor, board: Board): Promise<void> 
   );
 }
 
+export async function hasAnyBoardRows(tx: SqlExecutor): Promise<boolean> {
+  return (
+    (await tx.getFirstAsync<{ present: number }>('SELECT 1 AS present FROM boards LIMIT 1')) !==
+    null
+  );
+}
+
 export async function updateBoardRow(tx: SqlExecutor, board: Board): Promise<void> {
   await tx.runAsync(
     `UPDATE boards SET title = ?, symbol = ?, accent_hex = ?, uses_tinted_background = ?,
