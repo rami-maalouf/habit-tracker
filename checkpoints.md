@@ -615,6 +615,21 @@
    final fork closure. The USB/unlock request is a device availability prerequisite,
    not a new approval request. No fork or fork-point tag has been created.
 
+### Rami's acceptance and end of testing
+
+1. Rami asked whether the working iPad shortcuts were sufficient evidence for
+   iPhone shortcuts and concluded, "we're good, we're done." The shared native
+   implementation, three passing iPad Shortcuts actions, and both passing iPhone
+   Siri actions provide strong supporting evidence. This is accepted coverage,
+   not an observed separate iPhone Shortcuts test pass.
+2. Item 3.2 is accepted on that basis, and further testing is stopped. The pending
+   device unlock/USB request is no longer an active request. Remaining physical
+   widget, offline/deletion, and synthetic cleanup work was not completed; no
+   pass or completed fork closure is claimed for those items.
+3. No further device mutations, installations, or tests were performed. The
+   previously documented synthetic board remains for later user-directed cleanup.
+   No fork or `ripples-v1-fork-point` tag has been created.
+
 ### 3.6 - focused contract and sync scripts
 
 1. Both focused scripts reproduced exit 1 with no tests found before the move.

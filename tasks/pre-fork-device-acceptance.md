@@ -1,5 +1,10 @@
 # remaining signed acceptance
 
+Status after Rami's acceptance: testing stopped. The iPad Shortcuts passes and
+iPhone Siri passes are accepted in place of a separate iPhone Shortcuts run.
+The remaining widget, offline/deletion, and cleanup checks below were not
+completed. This acceptance does not turn unperformed checks into device passes.
+
 Current EAS development candidate: `38d0eac8-e9e1-408d-ac10-80522f35632c`.
 It contains all native corrections from clean source `589cc4f`, version 1.0.0 (1).
 Independent verification passed archive integrity, deep strict signatures, exact

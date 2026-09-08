@@ -12,15 +12,20 @@ Requested 2026-09-07. Governing documents: `SPEC-ripples-product.md`,
       empty-database seed action, validation, idempotency, and release guards.
 - [ ] 3.1: finish signed CloudKit offline, retry, delete, and conflict convergence.
       Signed delivery, an iPad offline write, and an edit/edit conflict have passed.
-- [ ] 3.2: finish actual Shortcuts and Siri acceptance of the three native intents.
+- [x] 3.2: accept Shortcuts and Siri coverage of the three native intents.
       All three Shortcuts actions passed on the iPad; both required Siri actions
-      passed on the iPhone. The final iPhone Shortcuts checkpoint remains open.
+      passed on the iPhone. Rami accepted this evidence in place of repeating
+      Shortcuts on the iPhone; a separate iPhone Shortcuts pass is not claimed.
 - [x] 3.3: implement alternate icons, install approved artwork, and verify native persistence.
 - [ ] 3.8: complete remaining device acceptance, remove synthetic acceptance data,
       record final closure, push clean main, and tag `ripples-v1-fork-point`.
 
 ## Approved decisions
 
+- After the signed-device results, Rami accepted the iPad Shortcuts evidence
+  together with the iPhone Siri passes and said, "we're good, we're done."
+  Testing is stopped. The remaining widget, offline/deletion, and cleanup work
+  was not completed; those items and fork closure are not marked passed.
 - Team `3V2UU7RRK9` was discovered locally and verified against existing signing
   material. EAS reused the existing certificate and Apple login. The connected
   iPhone 16 Pro and iPad Air 4 are registered in both app and widget profiles.
