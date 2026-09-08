@@ -454,6 +454,46 @@
    then ran no-board Today successfully: seven synthetic board names, morning
    pages 2, all others 0, Total 2. Evidence:
    `.artifacts/pre-fork/ios265-shortcuts/restored-today-success.png`.
+9. Apple's official sample was built in a separate ignored directory and installed
+   in a separate bundle on the same iOS 26.5 simulator. Independent verification
+   found all 40 Swift files byte-identical to Apple's download. The copied project
+   excludes only the unavailable Watch target's dependency and embed phase; the
+   iOS source is unchanged. Its Open Favorites automatic shortcut reproduced the
+   exact `Unable to run App Shortcut` error. This establishes an environment issue
+   for automatic launch, not the cause of Ripples' separate selected-Board failure.
+   The sample's composed entity action was not run. Further exploratory simulator
+   tests stopped after the user's instruction to hurry; signed acceptance remains
+   required. Evidence: `.artifacts/pre-fork/apple-appintents-sample/`.
+
+### Signed acceptance candidate and current stop point
+
+1. EAS Development build `38d0eac8-e9e1-408d-ac10-80522f35632c` finished from
+   clean source `589cc4fbf2060b04937db30d75f1b1113ee5e925`. Existing signing
+   credentials were frozen and reused. Independent GPT-5.6 Sol verification
+   passed archive integrity, deep strict signatures, exact approved team and
+   identifiers, exact two-device profile inventory, Development CloudKit, all
+   three icons, minimum iOS 18.6 on both targets, and exact public intent metadata.
+   Today Board remains optional; no static-package dependency or marker remains.
+2. The verified 44,302,125-byte IPA SHA-256 is
+   `8797b076d9ab3fa7c98438032fa25ad0a4ca3378fefbab530dbe4230ddadf38c`.
+   It was installed successfully as an update on the registered iPad. No uninstall,
+   reset, account change, or network change was performed. A post-install check
+   still reports a passcode lock, so no new launch or runtime pass is claimed.
+   The iPhone retains the prior shared-SQLite build until available for updating.
+3. Simulator exploration is stopped. Scoped Argent cleanup covered only this
+   task's simulators and debugger sessions; simulators remain booted and the user's
+   Metro 8081 remains running. No active UI test, native build, or debugger remains
+   from the completed simulator probes. Physical-device availability was requested.
+4. Remaining work is the signed Shortcuts/Siri and widget checkpoint, two-target
+   offline/reconnect/conflict/delete convergence, synthetic-data cleanup, and final
+   fork closure. These gates are not waived by the instruction to hurry. No fork
+   or `ripples-v1-fork-point` tag has been created. Resume directly from
+   `tasks/pre-fork-device-acceptance.md` and the current verified candidate;
+   do not repeat the completed simulator experiments.
+5. Private evidence: `.artifacts/pre-fork/final-intents-ipa/`,
+   `.artifacts/pre-fork/final-intents-ipad-install.json`, and
+   `.artifacts/pre-fork/ipad-current-lock.json`. This is a handoff checkpoint,
+   not the pre-fork closure entry.
 
 ### 3.6 - focused contract and sync scripts
 

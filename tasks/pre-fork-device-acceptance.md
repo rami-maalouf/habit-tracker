@@ -1,23 +1,28 @@
 # remaining signed acceptance
 
-Replacement EAS development build: `cd2e117b-d048-4367-87f0-4c1931c2c486`.
-It contains the shared-ExpoSQLite correction above base `f02c8e9`; EAS reports
-the base Git revision because the correction was uploaded from the working tree.
-Finished 2026-09-07, version 1.0.0 (1). Independent verification passed for deep
-strict signatures, Development entitlements, both-device provisioning, icons,
-and intent metadata. It is installed on the iPhone and iPad. Build page:
-https://expo.dev/accounts/ramimaalouf/projects/habit-tracker/builds/cd2e117b-d048-4367-87f0-4c1931c2c486
+Current EAS development candidate: `38d0eac8-e9e1-408d-ac10-80522f35632c`.
+It contains all native corrections from clean source `589cc4f`, version 1.0.0 (1).
+Independent verification passed archive integrity, deep strict signatures, exact
+Development entitlements and two-device provisioning, icons, minimum iOS 18.6,
+and exact intent metadata. It is installed on the iPad, which remains locked.
+The iPhone still has `cd2e117b-d048-4367-87f0-4c1931c2c486`; update it to this
+candidate when it is available for testing. Build page:
+https://expo.dev/accounts/ramimaalouf/projects/habit-tracker/builds/38d0eac8-e9e1-408d-ac10-80522f35632c
+Verified IPA SHA-256:
+`8797b076d9ab3fa7c98438032fa25ad0a4ca3378fefbab530dbe4230ddadf38c`.
+Private artifact and verification: `.artifacts/pre-fork/final-intents-ipa/`.
 
 Do not use the original mixed-SQLite build or the re-sign job
 `3835b2da-dac0-4809-a1d9-2f4dc32908a9`, which changed CloudKit to Production.
-The iPad has launched the corrected build and completed the concurrent native/app
+The iPad previously launched the shared-SQLite build and completed the concurrent native/app
 database stress check. iCloud is enabled, a successful sync is recorded, and the
 upload queue has drained to zero. It received the existing phone board. Full
 two-target offline/conflict acceptance remains open.
 
 User clarification: "I meant download it on my iPad." This supersedes the prior
 stop instruction and authorizes iPad installation/use for acceptance again. The
-verified build was already installed, so resume using that installation.
+latest verified candidate has now been installed as an update. Unlock the iPad
+and launch once before continuing; no new runtime pass is claimed yet.
 
 The app is `studio.orbitlabs.habittracker`, separate from the old bundle.
 CloudKit container: `iCloud.studio.orbitlabs.habittracker`; zone: `habit-tracker`.

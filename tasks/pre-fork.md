@@ -73,8 +73,11 @@ Requested 2026-09-07. Governing documents: `SPEC-ripples-product.md`,
   A validated boundary trace places the actual Remove Latest failure before
   identifier lookup and execution. A required-Board read-only Today control fails
   after Board selection with the same generic error. Diagnostic changes are restored;
-  the product contract remains unchanged. A same-runtime Apple sample comparison
-  is in progress. A bounded simulator Siri invocation produced no observed result.
+  the product contract remains unchanged. Apple's unchanged iOS sample reproduced
+  the automatic-shortcut error on the same simulator. Its composed entity action
+  was not run, so that separate Ripples failure remains unexplained. Further
+  exploratory simulator testing stopped at the user's request to hurry. A bounded
+  simulator Siri invocation produced no observed result.
 - Signed simulator icon acceptance passed for all three SpringBoard artworks and
   selection after relaunch. The saved flow replay passed 61 steps with zero failures.
   Default was restored. Settings status values expose native static-text traits;
@@ -92,19 +95,25 @@ Requested 2026-09-07. Governing documents: `SPEC-ripples-product.md`,
 
 ## Signed build and current limits
 
-Replacement Development build `cd2e117b-d048-4367-87f0-4c1931c2c486` is installed
-on both physical devices. It includes the shared-SQLite correction above base
-`f02c8e9`, now committed as `734f9e7`. Independent verification passed signatures,
-approved identities, Development environment, both-device provisioning, icons,
-and intent metadata. IPA SHA-256:
-`f6652598fb0e3ae1ad51355f2f0b38f53c4d001702561d66dfa7d31fb55a4138`.
+The current signed acceptance candidate is Development build
+`38d0eac8-e9e1-408d-ac10-80522f35632c`, from clean source `589cc4f`.
+Independent verification passed archive integrity, deep signatures, exact approved
+identities and two-device provisioning, Development environment, icons, minimum
+iOS 18.6, and exact intent metadata with Today Board optional. IPA SHA-256:
+`8797b076d9ab3fa7c98438032fa25ad0a4ca3378fefbab530dbe4230ddadf38c`.
+It is installed on the iPad as an update. The iPad remains passcode-locked, so no
+new launch or runtime acceptance is claimed. The iPhone still has corrected build
+`cd2e117b-d048-4367-87f0-4c1931c2c486`, which includes the shared-SQLite fix but
+predates the App Intents registration and API-contract corrections. Update it to
+the current candidate when available for testing.
 
 Do not use the original mixed-SQLite build or re-sign job
 `3835b2da-dac0-4809-a1d9-2f4dc32908a9`, which switched CloudKit to Production.
-The native registration correction will require a new native build for physical
-Shortcuts/Siri acceptance.
+The current candidate contains the native registration and API-contract corrections.
 
 The iPad auto-locked during offline-test preparation; its Wi-Fi was never changed.
+Its current candidate installation passed, but a fresh lock-state check still
+requires the user to unlock it before continuing.
 The iPhone had a personal call in the foreground, so its UI work paused. Neither
 device was reset. Pro Max's actual CloudKit attempt reported Signed Out, so it
 cannot replace the second signed-in target without user account setup; sync was
