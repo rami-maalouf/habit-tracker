@@ -2,6 +2,81 @@
 
 ## Pre-fork work - 2026-09-07
 
+### Pre-fork closure - 2026-09-07 (final)
+
+Rami declared the pre-fork work complete on 2026-09-07. This entry is the
+single record of what Ripples proved before it was forked into habit-system.
+Everything below it in this section is the working history that led here.
+
+**Fork point.** Tag `ripples-v1-fork-point` marks the commit that contains
+this entry. The fork copies the tree at that tag. Later Ripples commits do not
+move it.
+
+**Landed and pushed to `origin/main`.**
+
+| item | what landed | commits |
+| --- | --- | --- |
+| 3.1 CloudKit transport | direct CloudKit operations behind the unchanged `SyncTransport` port, conditional saves, account digest binding, error-code mapping; 31 Swift tests | `eb2189f`, `734f9e7`, `589cc4f` |
+| 3.2 App Intents | Swift executor passing the shared `intent-contract.json` verbatim; exactly three discoverable intents; 19 Swift tests | `eb2189f`, `b04bb87`, `a9f1ca1`, `589cc4f` |
+| 3.3 alternate icons | native adapter with confirmed-only persistence and rollback; Default, Midnight, Paper artwork registered for iPhone and iPad | `dd3b512`, `eb2189f` |
+| 3.4 reference fixture | `src/testing/fixtures/reference-august-2026.ts`, development-only, empty-database guard tested | `9a93a02` |
+| 3.5 reminder review | independent review closed with APPROVE after five findings were fixed | `8d85a43` |
+| 3.6 focused scripts | `tests/product/contracts/` and `tests/product/sync/` created; `test:contracts` and `test:sync` run | `993eeb0` |
+| 3.7 spec corrections | product spec now documents import, Timeline, `release-links.ts`, the `studio.orbitlabs.*` namespace, zone `habit-tracker`, and the fixture rules | `2481feb`, `eb2189f`, `1f7fb51` |
+| 3.8 privacy audit | no screenshots, artifacts, exports, credentials, or generated native folders tracked; `.easignore` mirrors `.gitignore` | `9339720`, `51cf494`, `eb2189f` |
+
+**Final gates at `f55732d` (the commit before this entry).**
+
+- `bun run validate`: exit 0; 45 suites, 570 tests; global coverage above 90
+  percent; every `src/core` file at 100 percent on all four metrics.
+- Swift module: 50 tests, 0 failures. Plugin configuration: 8 checks pass.
+- `bunx expo-doctor`: 21/21.
+- Working tree clean; `main` equal to `origin/main`.
+
+**Identifiers the fork must not reuse.** Bundle `studio.orbitlabs.habittracker`,
+App Group `group.studio.orbitlabs.habittracker`, CloudKit container
+`iCloud.studio.orbitlabs.habittracker`, zone `habit-tracker`, team `3V2UU7RRK9`.
+The fork gets its own bundle id, group, and container so the two apps never
+share a CloudKit zone or an app-group database.
+
+**Physical acceptance: what was observed, what was accepted, what was not run.**
+
+- Observed on signed physical devices (iPhone 16 Pro, iPad Air 4, both on the
+  Development CloudKit environment): two-target online convergence; one iPad
+  offline write that queued and converged after reconnection; one edit/edit
+  conflict where the older offline iPad edit lost to the newer online phone edit;
+  all three Shortcuts actions on the iPad including Cancel and confirmed Remove
+  Latest; Siri "today" and Siri "check in" on the iPhone.
+- Accepted without a run, by Rami ("we're good, we're done"): a separate iPhone
+  Shortcuts pass. The shared executor, the iPad Shortcuts passes, and the iPhone
+  Siri passes are the supporting evidence. This is accepted coverage, not an
+  observed pass.
+- Not run: the physical Home Screen widget check (the phone locked before the
+  widget-gallery test started; widget behavior has simulator evidence only);
+  reverse-order edit conflict; simultaneous offline targets; edit/delete
+  convergence; the iPhone full radio-off trial. None of these is claimed.
+- Simulator only: alternate icon switching and relaunch persistence.
+
+**Deferred by Rami, not blockers.**
+
+- Release destination URLs (feedback, App Store review, more products, privacy
+  policy, terms of use). Settings keeps honest unavailable-link states.
+- Cleanup of the synthetic acceptance board titled
+  `Sync acceptance iPhone conflict2` (29 check-ins) that remains on both
+  physical devices. Delete it from the app when convenient.
+- `.env` stays tracked; it holds only `ARGENT_SCREENSHOT_SCALE=0.2`.
+
+**Permanently out of scope for Ripples.** Widget in-place quick check-in.
+Proven on device to be impossible with `expo-widgets` in SDK 57: the widget
+button's intent performs in the extension process and never reaches the app.
+The widget deep-links to Add Check-In, which is the spec's rule for an action
+that cannot safely run.
+
+**What the fork inherits.** A working CloudKit transport, the single approved
+native module with intents and icons, a populated development fixture, a
+product spec that matches the code, and a reviewed, tagged history.
+
+
 ### Approval update - continuation authorized
 
 - The user instructed: "you already know what’s best. so go ahead and do everything."
