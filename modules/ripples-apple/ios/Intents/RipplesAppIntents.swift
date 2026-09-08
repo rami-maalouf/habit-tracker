@@ -3,8 +3,6 @@ import AppIntents
 import Foundation
 import WidgetKit
 
-public struct RipplesAppIntentsPackage: AppIntentsPackage {}
-
 public struct RipplesBoardEntity: AppEntity {
   public static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Board")
   public static var defaultQuery = RipplesBoardQuery()

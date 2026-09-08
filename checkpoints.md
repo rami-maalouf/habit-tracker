@@ -402,6 +402,59 @@
    breakpoint hits do not establish where execution stopped. It was detached
    successfully and the original app process remained alive.
 
+### App Intents execution diagnostics and static-package cleanup
+
+1. Removed the unused module-level `AppIntentsPackage` declaration. RipplesApple
+   is statically linked, and its definitions already merge into the application.
+   This completes the earlier package cleanup; it did not fix the execution error.
+   The three public intents, optional Today board, parameters, and invocation UUID
+   behavior are unchanged. Temporary summary, required-board, and initializer
+   controls were restored before preparing the next signed candidate.
+2. A corrected asynchronous LLDB trace verified the app was running throughout
+   an actual Remove Latest attempt. The error occurred before identifier-query
+   and `perform` entry. A successful no-board Today action hit its `perform`
+   breakpoint once, validating the tracer. Only fixed entry markers were recorded;
+   no arguments, notes, accounts, or database values were inspected. LLDB detached
+   successfully and left the app alive. Evidence:
+   `.artifacts/pre-fork/ios265-shortcuts/intent-async-trace-result.json`.
+3. Guarded hosted iOS tests used the real compiled wrappers and ExpoSQLite driver,
+   without a second implementation or SQLite library. Selected-board Today and
+   Check In passed, including same-instance receipt replay without duplication.
+   The public `callAsFunction(donate: false)` path also passed with selected Board.
+   These tests created exactly two synthetic current-day morning-pages records in
+   the seven-board simulator fixture. They are diagnostic tests of in-app execution,
+   not evidence that the out-of-process Shortcuts handoff works. The normal app
+   was restored afterward. Evidence:
+   `.artifacts/pre-fork/intents-widget-acceptance/hosted-intents-tests/`.
+4. Continuous UI tests kept Play, Board selection, and response observation in
+   one XCTest session. Check In and Remove Latest still failed before success or
+   confirmation; ending an inspection session between steps is not the sole cause.
+   Temporarily requiring Board on the otherwise working read-only Today intent
+   also failed after selection. This reproduces the issue without Date parameters,
+   mutation UUIDs, confirmation, or `@MainActor`. These controls made no check-ins.
+   The optional-board product contract is restored.
+5. The bounded simulator Siri probe submitted the exact read-only Today phrase but
+   observed no result within 20 seconds. Invocation alone is not a Siri pass.
+   Physical-device Siri and the remaining two-target iCloud acceptance stay open.
+6. Independent user reports reproduce simulator failures with Apple's sample:
+   https://developer.apple.com/forums/thread/836585 and
+   https://developer.apple.com/forums/thread/835888. Neither thread has an Apple
+   staff confirmation. A local sample comparison is being used to distinguish an
+   environment failure from a Ripples defect; the reports alone do not establish
+   Ripples' cause. Private UI evidence is in
+   `.artifacts/pre-fork/ios265-shortcuts/`.
+7. Final cleanup gates pass: 570 Jest tests in 45 suites, lint/typecheck, unchanged
+   full core coverage, 50 Swift tests, eight native config tests, and Expo Doctor
+   21/21. Logs are `.artifacts/pre-fork/static-package-final-{validate,native,doctor}.log`.
+   Independent GPT-5.6 Sol review approved the two-line source cleanup and the
+   diagnostic boundaries; its wording correction is included. This checkpoint
+   does not close signed-device acceptance or authorize a fork-point tag.
+8. The restored normal app built and installed successfully with Today Board
+   optional, the original summary, and exactly three provider shortcuts. Argent
+   then ran no-board Today successfully: seven synthetic board names, morning
+   pages 2, all others 0, Total 2. Evidence:
+   `.artifacts/pre-fork/ios265-shortcuts/restored-today-success.png`.
+
 ### 3.6 - focused contract and sync scripts
 
 1. Both focused scripts reproduced exit 1 with no tests found before the move.

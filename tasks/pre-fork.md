@@ -68,6 +68,13 @@ Requested 2026-09-07. Governing documents: `SPEC-ripples-product.md`,
   under investigation. Verified entity-lookup and sanitized-error API contract fixes
   have landed in source; the generic execution failure remains open.
   Discovery alone does not close the intent checkpoint.
+- Real hosted iOS wrapper and framework-resolution diagnostics passed, including
+  selected Board, one check-in on first invocation, and replay without duplication.
+  A validated boundary trace places the actual Remove Latest failure before
+  identifier lookup and execution. A required-Board read-only Today control fails
+  after Board selection with the same generic error. Diagnostic changes are restored;
+  the product contract remains unchanged. A same-runtime Apple sample comparison
+  is in progress. A bounded simulator Siri invocation produced no observed result.
 - Signed simulator icon acceptance passed for all three SpringBoard artworks and
   selection after relaunch. The saved flow replay passed 61 steps with zero failures.
   Default was restored. Settings status values expose native static-text traits;
