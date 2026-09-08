@@ -37,6 +37,9 @@ short offline interval; an `offline` status transition is not claimed.
 Evidence: `.artifacts/pre-fork/sync-acceptance/final-ipad-offline-v2-{summary,runtime,convergence}.json`.
 The iPhone's full radio-off trial still requires a wired control connection;
 the latest device report identifies its transport as `localNetwork`.
+The phone subsequently locked before the widget-gallery test started. That run
+was stopped without any widget or layout change. Resume with a direct USB
+connection and an unlocked phone; prepared runners are retained in ignored artifacts.
 
 Signed native execution now has physical evidence: all three Shortcuts actions
 ran on the iPad, including both Cancel and confirmed Remove Latest; both required

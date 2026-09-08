@@ -130,6 +130,10 @@ widgets, Shortcuts, and both Check In and Get Today's Check-Ins through Siri.
 Both required iPhone Siri actions now have independently reviewed physical evidence.
 Simulator preference does not waive that requirement. Synthetic acceptance records
 will be deleted through normal commands after convergence checks finish.
+The iPhone locked again before the widget-gallery run; that test never executed
+and added no widget. Resume with the phone directly connected by USB and unlocked.
+Prepared phone Shortcuts, widget, and radio-off runners are retained in ignored
+artifacts. Check the synthetic board's current logical date before resuming.
 
 ## Commits and fork gate
 

@@ -589,6 +589,32 @@
    pass. Reverse ordering, simultaneous offline targets, and edit/delete remain
    open. Evidence: `.artifacts/pre-fork/sync-acceptance/ipad-offline-edit-conflict2-summary.json`.
 
+### Current physical stop point after signed execution
+
+1. The physical iPhone locked again before the widget-gallery test could start.
+   The waiting XCTest was stopped. No widget was added, no Home Screen edit was
+   performed, and no widget cleanup is required. Prior read-only navigation
+   established Home Screen and retained private evidence; it is not widget
+   acceptance. The iPhone's latest Xcode transport remains `localNetwork`.
+2. Resume requires the iPhone connected directly by USB and unlocked. Both
+   devices already have the verified candidate; do not reinstall the app or
+   repeat completed Siri, iPad Shortcuts, offline-write, or edit/edit trials.
+   Prepared ignored runners exist in `.artifacts/pre-fork/phone-widget-runner/`,
+   `phone-shortcuts-runner/`, and `phone-offline-runner/`. The full phone radio-off
+   runner refuses wireless transport and retains only sanitized test evidence.
+3. The synthetic board remains active with 29 check-ins and title
+   `Sync acceptance iPhone conflict2`. Retain it for the pending iPhone Shortcuts
+   and widget checks, then complete edit/delete and normal-command cleanup.
+   Check the board's current logical date before any date-specific resumed test.
+4. Fresh lint and typecheck passed. Product source remains the verified `589cc4f`
+   candidate, and full validation/coverage, native tests, and Doctor results above
+   remain applicable. Documentation of the completed native and conflict checks
+   was independently reviewed and pushed in `8cde68e`.
+5. Remaining gates are the final iPhone Shortcuts/widget evidence, full two-target
+   offline/reconnect ordering, edit/delete convergence, synthetic cleanup, and
+   final fork closure. The USB/unlock request is a device availability prerequisite,
+   not a new approval request. No fork or fork-point tag has been created.
+
 ### 3.6 - focused contract and sync scripts
 
 1. Both focused scripts reproduced exit 1 with no tests found before the move.
