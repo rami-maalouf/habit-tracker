@@ -38,6 +38,22 @@ Evidence: `.artifacts/pre-fork/sync-acceptance/final-ipad-offline-v2-{summary,ru
 The iPhone's full radio-off trial still requires a wired control connection;
 the latest device report identifies its transport as `localNetwork`.
 
+Signed native execution now has physical evidence: all three Shortcuts actions
+ran on the iPad, including both Cancel and confirmed Remove Latest; both required
+Siri actions ran on the iPhone. Siri Check In created exactly one row and receipt
+with the correct logical date and widget projection. Final iPhone Shortcuts and
+physical widget checks remain open. Private summaries are in
+`.artifacts/pre-fork/ipad-ui-runner/shortcuts-acceptance-summary.json` and
+`.artifacts/pre-fork/physical-ui-runner/phone-siri-acceptance-status.json`.
+
+One edit/edit ordering also passed: an older offline iPad edit and newer online
+phone edit converged to the phone's greater stamp after iPad reconnection, with
+29 check-ins, empty queues, and intact integrity. The independent review verified
+both write timestamps inside the iPad's physical Wi-Fi-off interval and phone
+upload completion before reconnection. This does not cover simultaneous offline
+targets, reverse ordering, or edit/delete. Evidence:
+`.artifacts/pre-fork/sync-acceptance/ipad-offline-edit-conflict2-summary.json`.
+
 The app is `studio.orbitlabs.habittracker`, separate from the old bundle.
 CloudKit container: `iCloud.studio.orbitlabs.habittracker`; zone: `habit-tracker`.
 Use Development on both targets. Do not mix this acceptance build with a Production

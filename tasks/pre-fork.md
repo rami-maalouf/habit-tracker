@@ -11,9 +11,10 @@ Requested 2026-09-07. Governing documents: `SPEC-ripples-product.md`,
 - [x] 3.4: add the deterministic August fixture with an explicit development-only,
       empty-database seed action, validation, idempotency, and release guards.
 - [ ] 3.1: finish signed CloudKit offline, retry, delete, and conflict convergence.
-      The native transport and basic signed-device delivery are implemented and verified.
+      Signed delivery, an iPad offline write, and an edit/edit conflict have passed.
 - [ ] 3.2: finish actual Shortcuts and Siri acceptance of the three native intents.
-      The shared-fixture executor and discovery fix are implemented; execution is under test.
+      All three Shortcuts actions passed on the iPad; both required Siri actions
+      passed on the iPhone. The final iPhone Shortcuts checkpoint remains open.
 - [x] 3.3: implement alternate icons, install approved artwork, and verify native persistence.
 - [ ] 3.8: complete remaining device acceptance, remove synthetic acceptance data,
       record final closure, push clean main, and tag `ripples-v1-fork-point`.
@@ -58,16 +59,23 @@ Requested 2026-09-07. Governing documents: `SPEC-ripples-product.md`,
   widget projection, existing records, and database integrity passed. Uploads drained.
 - The iPad received the phone's existing board. Further synthetic edit, check-in,
   archive, and restore commands uploaded through the normal coordinator with
-  zero pending changes and intact integrity. Offline/conflict convergence is still open.
+  zero pending changes and intact integrity. A real Wi-Fi-off iPad check-in queued
+  locally and converged after reconnecting. A newer online phone edit also survived
+  a conflicting offline iPad edit; the iPad converged to the greater phone stamp,
+  with 29 check-ins, no pending changes, and passing integrity. Full two-target
+  offline and edit/delete trials remain open.
 - Swift CloudKit and intent tests pass: 50 tests, including the shared JSON contract.
   Exactly three discoverable intent definitions and matching shortcuts are in the
   compiled app metadata. Removing an inappropriate app-level package dependency
   for the statically linked module restored all three actions in the real iOS 26.5
   Shortcuts catalog. A composed Today's Check-Ins action runs successfully;
-  automatic tiles and composed Check In reported an Apple shortcut error and remain
-  under investigation. Verified entity-lookup and sanitized-error API contract fixes
-  have landed in source; the generic execution failure remains open.
-  Discovery alone does not close the intent checkpoint.
+  automatic tiles and composed Check In reported a simulator shortcut error.
+  Verified entity-lookup and sanitized-error API contract fixes landed in source.
+  On the current signed iPad, all three automatic actions subsequently executed:
+  Today returned counts, Check In reported the correct logical date, and Remove
+  passed both cancellation and confirmation. The signed iPhone also ran both
+  required Siri actions. Its Check In created one row, one receipt, and the
+  matching widget projection; the confirmed iPad removal restored the count to 29.
 - Real hosted iOS wrapper and framework-resolution diagnostics passed, including
   selected Board, one check-in on first invocation, and replay without duplication.
   A validated boundary trace places the actual Remove Latest failure before
@@ -101,26 +109,25 @@ Independent verification passed archive integrity, deep signatures, exact approv
 identities and two-device provisioning, Development environment, icons, minimum
 iOS 18.6, and exact intent metadata with Today Board optional. IPA SHA-256:
 `8797b076d9ab3fa7c98438032fa25ad0a4ca3378fefbab530dbe4230ddadf38c`.
-It is installed on the iPad as an update. The iPad remains passcode-locked, so no
-new launch or runtime acceptance is claimed. The iPhone still has corrected build
-`cd2e117b-d048-4367-87f0-4c1931c2c486`, which includes the shared-SQLite fix but
-predates the App Intents registration and API-contract corrections. Update it to
-the current candidate when available for testing.
+It is installed and launched on both registered physical devices. Both use the
+same Development CloudKit environment and have demonstrated matching synthetic
+records with drained queues and passing database integrity.
 
 Do not use the original mixed-SQLite build or re-sign job
 `3835b2da-dac0-4809-a1d9-2f4dc32908a9`, which switched CloudKit to Production.
 The current candidate contains the native registration and API-contract corrections.
 
-The iPad auto-locked during offline-test preparation; its Wi-Fi was never changed.
-Its current candidate installation passed, but a fresh lock-state check still
-requires the user to unlock it before continuing.
-The iPhone had a personal call in the foreground, so its UI work paused. Neither
-device was reset. Pro Max's actual CloudKit attempt reported Signed Out, so it
+The user unlocked both devices and testing resumed. The iPad's real Wi-Fi-off
+trials restored connectivity and foreground state. The phone's latest Xcode
+transport is wireless; a direct USB connection was requested before its full
+radio-off trial so the local restoration test retains its control connection.
+Neither device was reset. Pro Max's actual CloudKit attempt reported Signed Out, so it
 cannot replace the second signed-in target without user account setup; sync was
 restored off and no account settings changed.
 
 The governing spec still requires a signed physical iPhone checkpoint for iCloud,
 widgets, Shortcuts, and both Check In and Get Today's Check-Ins through Siri.
+Both required iPhone Siri actions now have independently reviewed physical evidence.
 Simulator preference does not waive that requirement. Synthetic acceptance records
 will be deleted through normal commands after convergence checks finish.
 

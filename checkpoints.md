@@ -528,6 +528,67 @@
    remain open. The phone currently uses a wireless Xcode connection; a USB
    connection was requested before its full radio-off trial. No fork tag exists.
 
+### Physical Siri Today result
+
+1. On the same verified physical iPhone build, the first Siri invocation showed
+   the per-app first-use consent and all three approved phrases. A subsequent
+   invocation of "Show today's check-ins in Ripples" returned the current
+   synthetic board's 28 check-ins and an aggregate total of 29, with board names
+   and counts only. Consent was enabled by that point; the evidence does not
+   establish who dismissed the initial prompt.
+2. The test assertion still expected the synthetic board's previous title and
+   failed. The retained screenshot visibly contains the correct current title
+   and counts, so this is an observed Siri execution pass, not a passing XCTest
+   assertion. Root and independent GPT-5.6 Sol visually reviewed the result:
+   PASS. No mutation occurred during the Today check.
+3. Private screenshot:
+   `.artifacts/pre-fork/physical-ui-runner/phone-siri-today-consent-activation-attachments/CD78C53A-D51D-4785-ABE1-91B3697FE016.png`.
+   The subsequent Check In and Shortcuts results are recorded below; this Today
+   observation alone does not cover those actions or the widget.
+
+### Physical Siri mutation and all three Shortcuts actions
+
+1. On the iPhone, "Check in with Ripples" presented the board picker. The single
+   synthetic selection was followed 262 ms later by a committed native check-in:
+   count 28 to 29, logical date `2026-09-07`, one receipt, and widget projection
+   `[0,0,0,0,0,0,29]`. The board remained active and integrity passed. The shared
+   executor records source `shortcut`; the separate Siri invocation/selection
+   timeline establishes voice provenance. The transient success dialog was not
+   captured and the later accessibility query failed after the overlay closed.
+   No retry or duplicate mutation occurred. Independent GPT-5.6 Sol review: PASS.
+2. On the iPad, a continuous signed Shortcuts test passed in 28.838 seconds:
+   all three expected automatic actions were present, Today returned counts and
+   board names, Check In with defaults returned the exact logical date, and
+   Remove Latest displayed its confirmation and accepted Cancel. The native
+   check-in increased the count to 30; cancellation preserved that count.
+3. A separate confirmed-removal test passed in 10.308 seconds, selecting only
+   the synthetic board, confirming once, and displaying the exact success result.
+   The independently observed count returned to 29, with an active board, an
+   empty outbox, and passing integrity. Optional-parameter and empty-date cases
+   remain covered by shared fixtures, not by these physical runs. Exact-three
+   inventory is independently supported by signed metadata; the UI test checked
+   the three expected actions rather than counting every visible element.
+4. Private evidence: `.artifacts/pre-fork/physical-ui-runner/phone-siri-check-in-runtime.json`,
+   `phone-siri-check-in-selection-timeline.json`, and
+   `.artifacts/pre-fork/ipad-ui-runner/shortcuts-acceptance-summary.json`,
+   `after-shortcuts-cancel-runtime.json`, and `after-confirmed-removal-runtime.json`.
+   The final iPhone Shortcuts and physical widget checkpoints remain open.
+
+### Physical edit/edit conflict convergence
+
+1. The reviewed one-shot harness edited only the synthetic board while iPad Wi-Fi
+   was off. The 36 ms write finished before the independent online phone edit,
+   which received the greater hybrid-clock stamp 668 ms later. The phone's queue
+   drained while iPad Wi-Fi remained off, 17.268 seconds before restoration.
+2. After reconnecting, the iPad retained 29 check-ins and converged to the phone's
+   exact greater stamp and title, with no pending changes and passing integrity.
+   The physical UI test passed in 44.693 seconds and restored Wi-Fi and Ripples
+   foreground state. Independent GPT-5.6 Sol verification: PASS for this ordering.
+3. The first attempted conflict trial made its phone edit after Wi-Fi restoration
+   because the phone debugger was unavailable; it is not counted as a conflict
+   pass. Reverse ordering, simultaneous offline targets, and edit/delete remain
+   open. Evidence: `.artifacts/pre-fork/sync-acceptance/ipad-offline-edit-conflict2-summary.json`.
+
 ### 3.6 - focused contract and sync scripts
 
 1. Both focused scripts reproduced exit 1 with no tests found before the move.
