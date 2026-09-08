@@ -495,6 +495,39 @@
    `.artifacts/pre-fork/ipad-current-lock.json`. This is a handoff checkpoint,
    not the pre-fork closure entry.
 
+### Signed physical convergence and offline write
+
+1. The user unlocked the devices and authorized immediate continuation. Both the
+   physical iPhone 16 Pro (iOS 26.5.2) and iPad Air 4 (iPadOS 26.4.1) now run
+   verified Development candidate `38d0eac8-e9e1-408d-ac10-80522f35632c`.
+   The iPhone update succeeded on retry after an interrupted installer connection;
+   public CallKit assertions confirmed no active call before its device checks.
+2. Both targets initially matched at 25 synthetic check-ins. A normal domain
+   title edit and check-in on the iPhone reached the iPad; both then had 26
+   check-ins, identical mutation stamps, enabled sync, no pending changes, and
+   passing database integrity. Only the identified `Sync acceptance ` board was
+   mutated; existing personal boards were preserved.
+3. A physical iPad Wi-Fi OFF/ON test passed and restored the original enabled
+   state. Its first JS harness waited for an `offline` status before writing,
+   timed out after 35 seconds, and made no mutation. CloudKit can remain
+   `syncing` through this interval, so this attempt was not counted as a write
+   acceptance pass and no product change was made to force an earlier result.
+4. The independently reviewed second harness made one normal `createCheckIn`
+   command while the separate XCTest proved Wi-Fi was off. The write took 33 ms,
+   entirely within the measured radio-off interval. The count increased 26 to 27,
+   one change remained queued, and integrity passed. The UI test passed in
+   44.706 seconds and restored both Wi-Fi and Ripples foreground state. After
+   reconnection and a separate phone write, both targets converged to 28 check-ins,
+   identical board stamps, empty queues, and passing integrity. GPT-5.6 Sol
+   independently verified the UI timestamps, runtime result, and convergence:
+   PASS. The short trial did not observe the `offline` status label.
+5. Private evidence is in `.artifacts/pre-fork/sync-acceptance/`: the final online
+   convergence, offline-v2 runtime, UI outcome, and convergence artifacts. No
+   product source changed. Full two-target offline/conflict trials, actual signed
+   Shortcuts/Siri and widget acceptance, synthetic cleanup, and fork closure
+   remain open. The phone currently uses a wireless Xcode connection; a USB
+   connection was requested before its full radio-off trial. No fork tag exists.
+
 ### 3.6 - focused contract and sync scripts
 
 1. Both focused scripts reproduced exit 1 with no tests found before the move.

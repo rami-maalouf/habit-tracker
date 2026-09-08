@@ -4,9 +4,9 @@ Current EAS development candidate: `38d0eac8-e9e1-408d-ac10-80522f35632c`.
 It contains all native corrections from clean source `589cc4f`, version 1.0.0 (1).
 Independent verification passed archive integrity, deep strict signatures, exact
 Development entitlements and two-device provisioning, icons, minimum iOS 18.6,
-and exact intent metadata. It is installed on the iPad, which remains locked.
-The iPhone still has `cd2e117b-d048-4367-87f0-4c1931c2c486`; update it to this
-candidate when it is available for testing. Build page:
+and exact intent metadata. It is installed and launched on both the physical
+iPad and iPhone. Both have iCloud enabled, matching synthetic records, an empty
+upload queue, and passing database integrity. Build page:
 https://expo.dev/accounts/ramimaalouf/projects/habit-tracker/builds/38d0eac8-e9e1-408d-ac10-80522f35632c
 Verified IPA SHA-256:
 `8797b076d9ab3fa7c98438032fa25ad0a4ca3378fefbab530dbe4230ddadf38c`.
@@ -21,8 +21,22 @@ two-target offline/conflict acceptance remains open.
 
 User clarification: "I meant download it on my iPad." This supersedes the prior
 stop instruction and authorizes iPad installation/use for acceptance again. The
-latest verified candidate has now been installed as an update. Unlock the iPad
-and launch once before continuing; no new runtime pass is claimed yet.
+latest verified candidate has now been installed as an update on both targets.
+After unlocking, the iPhone's new title edit and check-in reached the iPad:
+both reported 26 synthetic check-ins and the same board mutation stamp.
+Evidence: `.artifacts/pre-fork/sync-acceptance/final-online-convergence.json`.
+The iPad's first real Wi-Fi OFF/ON test restored connectivity and foreground
+state successfully, but its harness waited for an `offline` status before writing
+and timed out without a mutation. That attempt is not an offline-write pass.
+The reviewed second attempt passed: Wi-Fi was off before returning to Ripples,
+one validated check-in committed in 33 ms, the local count rose from 26 to 27,
+the outbox contained one pending change, and integrity passed. After restoring
+Wi-Fi, both devices converged to 28 check-ins, including a separate phone write,
+with empty queues and passing integrity. CloudKit remained `syncing` during the
+short offline interval; an `offline` status transition is not claimed.
+Evidence: `.artifacts/pre-fork/sync-acceptance/final-ipad-offline-v2-{summary,runtime,convergence}.json`.
+The iPhone's full radio-off trial still requires a wired control connection;
+the latest device report identifies its transport as `localNetwork`.
 
 The app is `studio.orbitlabs.habittracker`, separate from the old bundle.
 CloudKit container: `iCloud.studio.orbitlabs.habittracker`; zone: `habit-tracker`.
