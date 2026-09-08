@@ -1,6 +1,6 @@
 import Foundation
 
-struct IntentFailure: Error, Codable, LocalizedError, Equatable, Sendable {
+struct IntentFailure: Error, Codable, LocalizedError, CustomLocalizedStringResourceConvertible, Equatable, Sendable {
   let code: String
   let message: String
   var field: String? = nil
@@ -22,6 +22,7 @@ struct IntentFailure: Error, Codable, LocalizedError, Equatable, Sendable {
   }
 
   var errorDescription: String? { message }
+  var localizedStringResource: LocalizedStringResource { "\(message)" }
 
   static let unavailable = IntentFailure(code: "unavailable", message: "Open Ripples once to prepare your boards, then try again.", retryable: true)
   static let database = IntentFailure(code: "database", message: "Your boards could not be accessed. Try again after opening Ripples.", retryable: true)

@@ -24,11 +24,8 @@ public struct RipplesBoardQuery: EntityStringQuery {
   }
 
   public func entities(for identifiers: [String]) async throws -> [RipplesBoardEntity] {
-    let active = try await suggestedEntities()
-    let requested = Set(identifiers)
-    let matches = active.filter { requested.contains($0.id) }
-    guard matches.count == requested.count else { throw IntentFailure.notFound }
-    return matches
+    try RipplesIntentRuntime.open().listBoards(identifiers: identifiers).get()
+      .map { RipplesBoardEntity(id: $0.boardId, title: $0.title) }
   }
 
   public func entities(matching string: String) async throws -> [RipplesBoardEntity] {

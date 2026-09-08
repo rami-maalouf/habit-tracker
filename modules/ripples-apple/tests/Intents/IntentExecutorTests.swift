@@ -151,6 +151,35 @@ final class IntentExecutorTests: XCTestCase {
     XCTAssertEqual(IntentExecutor.migrationChecksums, checksums)
   }
 
+  func testAppIntentFailuresExposeTheirSanitizedLocalizedMessages() throws {
+    let failures = [IntentFailure.unavailable, .database, .migration, .notFound, .archived, .noCheckIn,
+      IntentFailure(code: "validation", message: "Choose a valid date.", field: "logicalDate")]
+    for failure in failures {
+      let error: any Error = failure
+      let localized = try XCTUnwrap(error as? any CustomLocalizedStringResourceConvertible)
+      XCTAssertEqual(String(localized: localized.localizedStringResource), failure.message)
+    }
+  }
+
+  func testEntityResolutionOmitsMissingArchivedAndDeletedBoardsInActiveOrder() throws {
+    let harness = try harness()
+    let first = "00000000-0000-4000-8000-00000000a001"
+    let second = "00000000-0000-4000-8000-00000000a002"
+    let archived = "00000000-0000-4000-8000-00000000a003"
+    let missing = "00000000-0000-4000-8000-00000000a099"
+    let resolved = try harness.executor.listBoards(identifiers: [second, missing, archived, first, second]).get()
+    XCTAssertEqual(resolved.map(\.boardId), [first, second])
+    XCTAssertEqual(try harness.executor.listBoards(identifiers: []).get(), [])
+    XCTAssertEqual(try harness.executor.listBoards(identifiers: [missing, archived]).get(), [])
+    try harness.database.run("UPDATE boards SET deleted_at = 1 WHERE id = ?", [.text(second)])
+    XCTAssertEqual(try harness.executor.listBoards(identifiers: [second]).get(), [])
+    XCTAssertEqual(try harness.database.rows("SELECT COUNT(*) AS count FROM command_receipts").first?["count"]?.number, 0)
+    XCTAssertEqual(harness.executor.checkIn(IntentCheckInInput(commandId: harness.id(), boardId: archived)).error, .archived)
+    XCTAssertEqual(harness.executor.checkIn(IntentCheckInInput(commandId: harness.id(), boardId: second)).error, .notFound)
+    XCTAssertEqual(try harness.database.rows("SELECT COUNT(*) AS count FROM check_ins").first?["count"]?.number, 0)
+    XCTAssertEqual(try harness.database.rows("SELECT COUNT(*) AS count FROM mutation_outbox").first?["count"]?.number, 0)
+  }
+
   func testReplaysTypeScriptFailureReceiptWithOptionalRetryableOmitted() throws {
     let harness = try harness()
     let commandId = harness.id()

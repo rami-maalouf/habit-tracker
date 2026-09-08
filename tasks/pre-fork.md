@@ -59,12 +59,14 @@ Requested 2026-09-07. Governing documents: `SPEC-ripples-product.md`,
 - The iPad received the phone's existing board. Further synthetic edit, check-in,
   archive, and restore commands uploaded through the normal coordinator with
   zero pending changes and intact integrity. Offline/conflict convergence is still open.
-- Swift CloudKit and intent tests pass: 48 tests, including the shared JSON contract.
+- Swift CloudKit and intent tests pass: 50 tests, including the shared JSON contract.
   Exactly three discoverable intent definitions and matching shortcuts are in the
   compiled app metadata. Removing an inappropriate app-level package dependency
   for the statically linked module restored all three actions in the real iOS 26.5
   Shortcuts catalog. A composed Today's Check-Ins action runs successfully;
-  automatic tiles reported an Apple shortcut error and remain under investigation.
+  automatic tiles and composed Check In reported an Apple shortcut error and remain
+  under investigation. Verified entity-lookup and sanitized-error API contract fixes
+  have landed in source; the generic execution failure remains open.
   Discovery alone does not close the intent checkpoint.
 - Signed simulator icon acceptance passed for all three SpringBoard artworks and
   selection after relaunch. The saved flow replay passed 61 steps with zero failures.

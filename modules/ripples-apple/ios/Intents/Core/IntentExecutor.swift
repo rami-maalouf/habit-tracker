@@ -20,9 +20,11 @@ final class IntentExecutor {
     self.uuid = uuid
   }
 
-  func listBoards() -> IntentOutcome<[IntentBoard]> {
-    read {
-      try self.activeBoards().map { IntentBoard(boardId: $0.id, title: $0.title) }
+  func listBoards(identifiers: [String]? = nil) -> IntentOutcome<[IntentBoard]> {
+    let requested = identifiers.map(Set.init)
+    return read {
+      try self.activeBoards().filter { requested?.contains($0.id) ?? true }
+        .map { IntentBoard(boardId: $0.id, title: $0.title) }
     }
   }
 

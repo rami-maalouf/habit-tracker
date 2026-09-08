@@ -372,6 +372,36 @@
    the underlying editor. Remaining actions and automatic tiles are being tested;
    no signed-physical or Siri pass is claimed.
 
+### App Intents entity and error contracts
+
+1. Actual iOS 26.5 Check In testing reaches the board picker, then returns a
+   generic internal error after selecting the synthetic morning pages board with
+   optional parameters omitted. No check-in row or failure receipt was committed.
+   A build with the debug dylib disabled reproduced the same failure; that build
+   setting was restored. A native-core run against an isolated backup of the demo
+   database passed and left the live store untouched.
+2. Independent review found that `entities(for:)` incorrectly threw when any
+   identifier was unavailable. Apple requires omission of unavailable identifiers.
+   The query now filters active boards in their existing order, omitting missing,
+   archived, and deleted entities. Mutation commands retain their own validation.
+   Reference: https://developer.apple.com/documentation/appintents/entityquery/entities%28for%3A%29
+3. Existing sanitized failures now conform to
+   `CustomLocalizedStringResourceConvertible`, as required for actionable App
+   Intents error wording. No raw platform errors or user contents were added.
+   Reference: https://developer.apple.com/videos/play/wwdc2022/10032/
+4. Both regressions reproduced before the fixes. All 50 Swift tests and eight
+   native config tests pass, as do lint/typecheck, the simulator build, and diff
+   checks. The build retains minimum iOS 18.6. Independent GPT-5.6 Sol source and
+   test review: PASS. Evidence: `.artifacts/pre-fork/intent-contract-native-tests.log`
+   and `.artifacts/pre-fork/intents-widget-acceptance/intent-contract-build-evidence.json`.
+5. The rebuilt app still reproduced the generic Check In failure without a
+   debugger. These are verified API contract fixes, not a completed execution
+   checkpoint. A separately reviewed, ignored LLDB trace uses static entry markers
+   only, with no argument or database inspection, to locate the remaining failure.
+   Its first run was inconclusive: the debugger stalled while resuming, so zero
+   breakpoint hits do not establish where execution stopped. It was detached
+   successfully and the original app process remained alive.
+
 ### 3.6 - focused contract and sync scripts
 
 1. Both focused scripts reproduced exit 1 with no tests found before the move.
