@@ -1,10 +1,37 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { IOSConfig, withDangerousMod, withEntitlementsPlist, withInfoPlist, withXcodeProject } = require('expo/config-plugins');
+const { IOSConfig, withAppDelegate, withDangerousMod, withEntitlementsPlist, withInfoPlist, withXcodeProject } = require('expo/config-plugins');
 const { generateImageAsync } = require('@expo/image-utils');
 
 const alternateIcons = ['midnight', 'paper'];
 const intentSourceName = 'RipplesApplicationIntents.swift';
+
+function registerAppShortcuts(appDelegate) {
+  if (appDelegate.language !== 'swift') {
+    throw new Error('ripples-apple shortcut registration requires a swift app delegate');
+  }
+  let contents = appDelegate.contents;
+  const launchReturn = /^([ \t]*)return super\.application\(application, didFinishLaunchingWithOptions: launchOptions\)[ \t]*$/gm;
+  const matches = [...contents.matchAll(launchReturn)];
+  if (matches.length !== 1) {
+    throw new Error('ripples-apple could not find one native launch hook for shortcut registration');
+  }
+  const call = 'RipplesApplicationShortcuts.updateAppShortcutParameters()';
+  const existingCalls = [...contents.matchAll(/^[ \t]*RipplesApplicationShortcuts\.updateAppShortcutParameters\(\)[ \t]*$/gm)];
+  if (existingCalls.length > 1 || (existingCalls.length === 1 && (
+    existingCalls[0].index >= matches[0].index ||
+    contents.slice(existingCalls[0].index + existingCalls[0][0].length, matches[0].index).trim() !== ''
+  ))) {
+    throw new Error('ripples-apple found duplicate or misplaced shortcut registration');
+  }
+  if (existingCalls.length === 0) {
+    contents = contents.replace(launchReturn, `$1${call}\n$&`);
+  }
+  if (!/^(?:internal )?import AppIntents[ \t]*$/m.test(contents)) {
+    contents = `import AppIntents\n${contents}`;
+  }
+  return { ...appDelegate, contents };
+}
 
 function configureEntitlements(entitlements, bundleIdentifier, cloudKitEnvironment = 'Development') {
   if (!['Development', 'Production'].includes(cloudKitEnvironment)) {
@@ -47,6 +74,11 @@ async function writeAlternateIcons(projectRoot, catalogDirectory) {
 function withRipplesApple(config) {
   const bundleIdentifier = config.ios?.bundleIdentifier;
   if (!bundleIdentifier) throw new Error('ripples-apple requires ios.bundleIdentifier');
+
+  config = withAppDelegate(config, (mod) => {
+    mod.modResults = registerAppShortcuts(mod.modResults);
+    return mod;
+  });
 
   config = withEntitlementsPlist(config, (mod) => {
     mod.modResults = configureEntitlements(mod.modResults, bundleIdentifier, process.env.RIPPLES_CLOUDKIT_ENVIRONMENT);

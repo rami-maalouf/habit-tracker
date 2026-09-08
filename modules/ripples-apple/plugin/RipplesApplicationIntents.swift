@@ -1,10 +1,6 @@
 import AppIntents
 internal import RipplesApple
 
-struct RipplesApplicationIntents: AppIntentsPackage {
-  static var includedPackages: [any AppIntentsPackage.Type] { [RipplesAppIntentsPackage.self] }
-}
-
 struct RipplesApplicationShortcuts: AppShortcutsProvider {
   static var appShortcuts: [AppShortcut] {
     AppShortcut(

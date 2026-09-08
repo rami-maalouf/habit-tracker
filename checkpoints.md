@@ -338,6 +338,40 @@
    Native UI evidence from the same source is recorded by the icon and widget
    acceptance agents; this lint-only change does not alter runtime behavior.
 
+### App Intents discovery correction
+
+1. iOS 27's simulator Shortcuts catalog was empty even for built-in actions.
+   A separate iOS 26.5 simulator had a healthy catalog, but Ripples was absent
+   after installation, app initialization, and Shortcuts restart despite having
+   three discoverable definitions and three shortcuts in the compiled metadata.
+2. The sole module's config plugin now registers its app-level shortcut provider
+   during app startup. The actual AppDelegate mod is idempotent, preserves linking
+   handlers, and rejects unsupported or ambiguous launch hooks. Independent
+   review found a duplicate/misplaced-call gap; regression tests and the guard
+   were corrected before approval. This startup call alone did not restore discovery.
+3. The app additionally declared an AppIntentsPackage dependency for RipplesApple,
+   even though the CocoaPod is statically linked and its definitions already merge
+   into the app metadata. Removed that app-level package dependency while retaining
+   exactly three public intents and their provider. Apple's static-library guidance:
+   https://developer.apple.com/videos/play/wwdc2025/244/
+4. The generated-source regression reproduced the package mismatch before the fix.
+   Eight plugin tests, lint/typecheck, and the arm64 simulator build pass. The new
+   app has no package-dependency metadata and still includes the three intents.
+   Actual iOS 26.5 Shortcuts discovery now shows exactly Check In, Remove Latest
+   Check-In, and Today's Check-Ins. Evidence:
+   `.artifacts/pre-fork/intents-widget-acceptance/static-intents-build-evidence.json`
+   and `.artifacts/pre-fork/ios265-shortcuts/`.
+5. Independent GPT-5.6 Sol review: PASS after aligning the intent test README with
+   the static-link architecture. The minimum iOS remains 18.6; source availability
+   and builds pass, without claiming runtime QA on an uninstalled 18.6 simulator.
+6. Discovery is fixed; full execution acceptance is still open. The first
+   auto-shortcut attempts reported Apple's generic inability-to-run result before
+   parameters or results and created no check-in. A composed Today's Check-Ins
+   shortcut subsequently succeeded with all seven demo board names and zero counts.
+   Its native result overlay was visible even though Argent initially described
+   the underlying editor. Remaining actions and automatic tiles are being tested;
+   no signed-physical or Siri pass is claimed.
+
 ### 3.6 - focused contract and sync scripts
 
 1. Both focused scripts reproduced exit 1 with no tests found before the move.
