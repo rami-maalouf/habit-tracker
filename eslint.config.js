@@ -20,6 +20,12 @@ module.exports = defineConfig([
     ignores: ["dist/*"],
   },
   {
+    files: ['modules/ripples-apple/plugin/**/*.js', 'modules/ripples-apple/tests/plugin/**/*.cjs'],
+    languageOptions: {
+      globals: { __dirname: 'readonly' },
+    },
+  },
+  {
     // the theme is consumed only through its public entry point
     files: ['src/**/*.{ts,tsx}', 'tests/**/*.{ts,tsx}'],
     ignores: ['src/theme/**'],

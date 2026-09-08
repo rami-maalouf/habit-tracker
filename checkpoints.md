@@ -321,6 +321,23 @@
    private/generated/signing artifacts, and effective ignore rules. Final closure
    remains pending device acceptance; no fork-point tag has been created.
 
+### Native plugin lint gate
+
+1. Targeted lint reproduced two `no-undef` failures for CommonJS `__dirname` in
+   the plugin and plugin tests, which Expo's normal lint command omitted.
+   The lint script now checks those folders. Only their ESLint scope declares
+   `__dirname` readonly; no lint rule was disabled and no dependency was added.
+2. Independent GPT-5.6 Sol review: PASS. Targeted lint passed; an in-memory probe
+   still rejected an unknown global, and calculated config confirmed the new
+   global does not extend to app source or unrelated configuration files.
+3. Combined validation, including the in-progress registration correction, passed
+   570 tests across 45 suites, lint/typecheck, global coverage
+   97.5/95.5/95.58/97.6, and all existing core gates. Evidence:
+   `.artifacts/pre-fork/native-plugin-lint-red.log` and
+   `.artifacts/pre-fork/registration-validate.log`.
+   Native UI evidence from the same source is recorded by the icon and widget
+   acceptance agents; this lint-only change does not alter runtime behavior.
+
 ### 3.6 - focused contract and sync scripts
 
 1. Both focused scripts reproduced exit 1 with no tests found before the move.
